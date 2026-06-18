@@ -1,0 +1,56 @@
+[build-system]
+requires = ["uv_build>=0.9.18,<0.10.0"]
+build-backend = "uv_build"
+
+[project]
+name = "typed-agent-hooks"
+version = "0.0.1"
+description = "Strict Pydantic schemas and managed hooksets for Codex and Claude Code."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Nima Shoghi", email = "nimashoghi@gmail.com" }]
+dependencies = [
+  "pydantic>=2.8,<3",
+  "tomli>=2; python_version < '3.11'",
+]
+keywords = ["codex", "claude-code", "hooks", "pydantic", "schemas"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Typing :: Typed",
+]
+
+[project.urls]
+Repository = "https://github.com/nimashoghi/typed-agent-hooks"
+
+[project.scripts]
+typed-agent-hooks = "typed_agent_hooks.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.15", "ty>=0.0.50,<0.1"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ty.environment]
+python-version = "3.10"
+root = ["./src"]
+
+[tool.ty.src]
+include = ["src", "tests"]
+
+[tool.ty.terminal]
+output-format = "concise"

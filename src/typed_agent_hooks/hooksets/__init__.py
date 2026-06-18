@@ -1,0 +1,62 @@
+"""Declarative hookset models, compilation, validation, and installation."""
+
+from .check import CheckReport, check_hookset
+from .compiler import (
+    CompiledConfig,
+    ProviderSelection,
+    compile_hookset,
+    compile_hooksets,
+    resolve_app_spec,
+    target_providers,
+)
+from .install import (
+    ConfigChange,
+    Scope,
+    config_dict,
+    default_config_path,
+    install_config,
+    merge_managed_config,
+    read_json_object,
+    uninstall_config,
+)
+from .models import (
+    ClaudeCodeHookSet,
+    ClaudeCodeHookSpec,
+    CodexHookSet,
+    CodexHookSpec,
+    HookSet,
+    ProviderName,
+    SharedHookSet,
+    SharedHookSpec,
+    parse_hookset,
+    read_hookset,
+)
+
+__all__ = [
+    "CheckReport",
+    "ClaudeCodeHookSet",
+    "ClaudeCodeHookSpec",
+    "CodexHookSet",
+    "CodexHookSpec",
+    "CompiledConfig",
+    "ConfigChange",
+    "HookSet",
+    "ProviderName",
+    "ProviderSelection",
+    "Scope",
+    "SharedHookSet",
+    "SharedHookSpec",
+    "check_hookset",
+    "compile_hookset",
+    "compile_hooksets",
+    "config_dict",
+    "default_config_path",
+    "install_config",
+    "merge_managed_config",
+    "parse_hookset",
+    "read_hookset",
+    "read_json_object",
+    "resolve_app_spec",
+    "target_providers",
+    "uninstall_config",
+]
