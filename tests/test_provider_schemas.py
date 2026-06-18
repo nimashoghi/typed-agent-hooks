@@ -81,3 +81,32 @@ def test_provider_config_rejects_matchers_for_events_that_ignore_them() -> None:
     )
     with pytest.raises(ValidationError, match="ignores matchers"):
         claude_code.config.SettingsHooks(hooks={"UserPromptSubmit": [claude_group]})
+
+
+def test_models_accept_python_names_and_emit_provider_aliases() -> None:
+    output = codex.outputs.UserPromptSubmitOutput(
+        hook_specific_output=codex.outputs.UserPromptSubmitSpecificOutput(
+            hook_event_name="UserPromptSubmit",
+            additional_context="Review tests before editing.",
+        )
+    )
+
+    assert output.model_dump(by_alias=True, exclude_none=True) == {
+        "hookSpecificOutput": {
+            "hookEventName": "UserPromptSubmit",
+            "additionalContext": "Review tests before editing.",
+        }
+    }
+
+    command = claude_code.config.CommandHook(
+        command="python",
+        async_=True,
+        condition="Bash(*)",
+    )
+
+    assert command.model_dump(by_alias=True, exclude_none=True) == {
+        "type": "command",
+        "command": "python",
+        "async": True,
+        "if": "Bash(*)",
+    }
