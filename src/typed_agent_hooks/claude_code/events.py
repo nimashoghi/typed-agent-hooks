@@ -1,7 +1,5 @@
 """Strict Claude Code command-hook input schemas."""
 
-from __future__ import annotations
-
 from typing import Annotated, Literal, TypeAlias
 
 from pydantic import Field, TypeAdapter, model_validator
@@ -376,7 +374,7 @@ class ElicitationResultInput(BaseInput):
     content: Json | None = None
 
     @model_validator(mode="after")
-    def _content_requires_accept(self) -> ElicitationResultInput:
+    def _content_requires_accept(self) -> "ElicitationResultInput":
         if self.action != "accept" and self.content is not None:
             raise ValueError("ElicitationResult content requires action='accept'")
         return self

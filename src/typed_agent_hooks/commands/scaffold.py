@@ -1,7 +1,5 @@
 """Create minimal hook projects without embedding templates in the CLI parser."""
 
-from __future__ import annotations
-
 import re
 from pathlib import Path
 from typing import Literal, TypeAlias

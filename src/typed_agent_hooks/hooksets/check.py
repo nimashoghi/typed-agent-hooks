@@ -1,7 +1,5 @@
 """Hookset validation that intentionally imports and inspects the hook app."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from pathlib import Path
 

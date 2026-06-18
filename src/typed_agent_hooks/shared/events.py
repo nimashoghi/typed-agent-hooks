@@ -1,7 +1,5 @@
 """Provider-independent semantic events shared by Codex and Claude Code."""
 
-from __future__ import annotations
-
 from typing import Annotated, Literal, TypeAlias
 
 from pydantic import Field, TypeAdapter

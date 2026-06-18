@@ -1,7 +1,5 @@
 """Load hook application objects from modules or Python files."""
 
-from __future__ import annotations
-
 import hashlib
 import importlib
 import importlib.util

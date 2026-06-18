@@ -1,7 +1,5 @@
 """Strict Claude Code command-hook output schemas and event/output validation."""
 
-from __future__ import annotations
-
 from typing import Literal, TypeAlias
 
 from pydantic import Field, model_validator
@@ -22,7 +20,7 @@ class _BlockableOutput(ClaudeCommonOutput):
     reason: str | None = None
 
     @model_validator(mode="after")
-    def _block_requires_reason(self) -> _BlockableOutput:
+    def _block_requires_reason(self) -> "_BlockableOutput":
         if self.decision == "block" and not self.reason:
             raise ValueError("reason is required when decision='block'")
         return self
@@ -161,7 +159,7 @@ class PreToolUseSpecificOutput(StrictModel):
     )
 
     @model_validator(mode="after")
-    def _updated_input_requires_allow_or_ask(self) -> PreToolUseSpecificOutput:
+    def _updated_input_requires_allow_or_ask(self) -> "PreToolUseSpecificOutput":
         if self.updated_input is not None and self.permission_decision not in {"allow", "ask"}:
             raise ValueError("updatedInput is only valid for allow/ask")
         return self
@@ -189,7 +187,7 @@ class PermissionRequestDecision(StrictModel):
     interrupt: bool | None = None
 
     @model_validator(mode="after")
-    def _behavior_fields_are_consistent(self) -> PermissionRequestDecision:
+    def _behavior_fields_are_consistent(self) -> "PermissionRequestDecision":
         if self.behavior == "allow":
             if self.message is not None or self.interrupt is not None:
                 raise ValueError("allow cannot include message or interrupt")
@@ -423,7 +421,7 @@ class ElicitationSpecificOutput(StrictModel):
     content: dict[str, Json] | None = None
 
     @model_validator(mode="after")
-    def _content_requires_accept(self) -> ElicitationSpecificOutput:
+    def _content_requires_accept(self) -> "ElicitationSpecificOutput":
         if self.action != "accept" and self.content is not None:
             raise ValueError("content is only meaningful with action='accept'")
         return self
@@ -445,7 +443,7 @@ class ElicitationResultSpecificOutput(StrictModel):
     content: dict[str, Json] | None = None
 
     @model_validator(mode="after")
-    def _content_requires_accept(self) -> ElicitationResultSpecificOutput:
+    def _content_requires_accept(self) -> "ElicitationResultSpecificOutput":
         if self.action != "accept" and self.content is not None:
             raise ValueError("content is only meaningful with action='accept'")
         return self

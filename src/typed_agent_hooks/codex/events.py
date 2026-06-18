@@ -1,7 +1,5 @@
 """Strict Codex command-hook input schemas."""
 
-from __future__ import annotations
-
 from typing import Annotated, Literal, TypeAlias
 
 from pydantic import Field, TypeAdapter

@@ -1,7 +1,5 @@
 """Hookset-facing operations used by the command-line interface."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from typed_agent_hooks.hooksets import (

@@ -1,7 +1,5 @@
 """Shared primitives for strict hook schemas and rendering."""
 
-from __future__ import annotations
-
 import json
 from collections.abc import Mapping
 from enum import Enum

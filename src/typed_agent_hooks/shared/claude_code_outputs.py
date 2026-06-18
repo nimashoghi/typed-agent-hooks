@@ -1,7 +1,5 @@
 """Translate shared result intents into strict Claude Code output models."""
 
-from __future__ import annotations
-
 from typed_agent_hooks import claude_code
 
 from .events import AnyEvent

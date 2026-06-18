@@ -1,7 +1,5 @@
 """Typed handler registration shared by provider-specific applications."""
 
-from __future__ import annotations
-
 import inspect
 from collections.abc import Callable, Mapping
 from types import MappingProxyType

@@ -1,7 +1,5 @@
 """Pure runtime operations used by the command-line interface."""
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Literal, TypeAlias
 

@@ -1,7 +1,5 @@
 """Explicit provider-to-shared event adapters."""
 
-from __future__ import annotations
-
 from typed_agent_hooks import claude_code, codex
 from typed_agent_hooks.core import JsonInput, Provider
 

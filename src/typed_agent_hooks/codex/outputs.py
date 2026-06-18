@@ -1,7 +1,5 @@
 """Strict Codex command-hook output schemas and event/output validation."""
 
-from __future__ import annotations
-
 from typing import Literal, TypeAlias
 
 from pydantic import Field, model_validator
@@ -65,7 +63,7 @@ class PreToolUseDecision(StrictModel):
     )
 
     @model_validator(mode="after")
-    def _updated_input_requires_allow(self) -> PreToolUseDecision:
+    def _updated_input_requires_allow(self) -> "PreToolUseDecision":
         if self.updated_input is not None and self.permission_decision != "allow":
             raise ValueError("Codex PreToolUse updatedInput requires permissionDecision='allow'")
         return self
@@ -84,7 +82,7 @@ class PreToolUseOutput(StrictModel):
     )
 
     @model_validator(mode="after")
-    def _block_requires_reason(self) -> PreToolUseOutput:
+    def _block_requires_reason(self) -> "PreToolUseOutput":
         _validate_block(self.decision, self.reason)
         return self
 
@@ -94,7 +92,7 @@ class PermissionDecision(StrictModel):
     message: str | None = None
 
     @model_validator(mode="after")
-    def _allow_has_no_message(self) -> PermissionDecision:
+    def _allow_has_no_message(self) -> "PermissionDecision":
         if self.behavior == "allow" and self.message is not None:
             raise ValueError("Codex PermissionRequest allow cannot include message")
         return self
@@ -146,7 +144,7 @@ class PostToolUseOutput(StrictModel):
     )
 
     @model_validator(mode="after")
-    def _block_requires_reason(self) -> PostToolUseOutput:
+    def _block_requires_reason(self) -> "PostToolUseOutput":
         _validate_block(self.decision, self.reason)
         return self
 
@@ -174,7 +172,7 @@ class UserPromptSubmitOutput(CommonOutput):
     )
 
     @model_validator(mode="after")
-    def _block_requires_reason(self) -> UserPromptSubmitOutput:
+    def _block_requires_reason(self) -> "UserPromptSubmitOutput":
         _validate_block(self.decision, self.reason)
         return self
 
@@ -184,7 +182,7 @@ class StopOutput(CommonOutput):
     reason: str | None = None
 
     @model_validator(mode="after")
-    def _block_requires_reason(self) -> StopOutput:
+    def _block_requires_reason(self) -> "StopOutput":
         _validate_block(self.decision, self.reason)
         return self
 

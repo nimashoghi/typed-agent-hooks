@@ -1,7 +1,5 @@
 """Command-line interface for developing and managing typed hooksets."""
 
-from __future__ import annotations
-
 import argparse
 import json
 import logging
@@ -158,7 +156,7 @@ def _add_install_location(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_run_parser(
-    parent: argparse._SubParsersAction[argparse.ArgumentParser],
+    parent: argparse._SubParsersAction,
     mode: str,
 ) -> None:
     cli_mode = mode.replace("_", "-")

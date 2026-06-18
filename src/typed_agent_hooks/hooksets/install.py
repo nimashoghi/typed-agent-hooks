@@ -1,7 +1,5 @@
 """Idempotent installation and removal of managed hookset configuration."""
 
-from __future__ import annotations
-
 import json
 import os
 import shlex

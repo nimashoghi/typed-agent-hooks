@@ -1,7 +1,5 @@
 """Portable result intents returned by shared-mode handlers."""
 
-from __future__ import annotations
-
 from typing import Literal, TypeAlias
 
 from typed_agent_hooks.core import Json, StrictModel

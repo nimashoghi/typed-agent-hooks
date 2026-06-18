@@ -1,7 +1,5 @@
 """Typed Codex ``hooks.json`` command-hook configuration."""
 
-from __future__ import annotations
-
 from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
@@ -52,7 +50,7 @@ class HooksFile(StrictModel):
     hooks: dict[CodexEventName, list[HookGroup]] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def _matchers_are_supported(self) -> HooksFile:
+    def _matchers_are_supported(self) -> "HooksFile":
         for event_name, groups in self.hooks.items():
             if event_name in MATCHER_EVENTS:
                 continue

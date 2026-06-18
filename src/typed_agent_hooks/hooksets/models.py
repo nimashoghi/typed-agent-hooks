@@ -1,7 +1,5 @@
 """Strict declarative hookset models parsed from TOML."""
 
-from __future__ import annotations
-
 import sys
 from importlib import import_module
 from pathlib import Path
@@ -103,7 +101,7 @@ class CodexHookSet(StrictModel):
     hooks: list[CodexHookSpec] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def _app_is_valid(self) -> CodexHookSet:
+    def _app_is_valid(self) -> "CodexHookSet":
         _validate_app_spec(self.app)
         return self
 
@@ -117,7 +115,7 @@ class ClaudeCodeHookSet(StrictModel):
     hooks: list[ClaudeCodeHookSpec] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def _app_is_valid(self) -> ClaudeCodeHookSet:
+    def _app_is_valid(self) -> "ClaudeCodeHookSet":
         _validate_app_spec(self.app)
         return self
 
@@ -132,7 +130,7 @@ class SharedHookSet(StrictModel):
     hooks: list[SharedHookSpec] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def _configuration_is_consistent(self) -> SharedHookSet:
+    def _configuration_is_consistent(self) -> "SharedHookSet":
         _validate_app_spec(self.app)
         if len(set(self.providers)) != len(self.providers):
             raise ValueError("providers must not contain duplicates")

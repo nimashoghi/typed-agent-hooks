@@ -1,7 +1,5 @@
 """Explicit shared-event to provider-event mapping."""
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 
 from typed_agent_hooks import claude_code, codex

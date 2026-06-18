@@ -1,7 +1,5 @@
 """Public shared output intents and provider conversion functions."""
 
-from __future__ import annotations
-
 from typed_agent_hooks.core import Provider, StrictModel
 
 from .claude_code_outputs import to_claude_code_output

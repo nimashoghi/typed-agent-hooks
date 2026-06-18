@@ -1,7 +1,5 @@
 """Translate shared result intents into strict Codex output models."""
 
-from __future__ import annotations
-
 from typed_agent_hooks import codex
 
 from .events import AnyEvent

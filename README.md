@@ -60,8 +60,6 @@ The command creates:
 ### Codex
 
 ```python
-from __future__ import annotations
-
 from typed_agent_hooks import codex
 
 app = codex.HookApp()
@@ -82,8 +80,6 @@ def inspect_prompt(
 ### Claude Code
 
 ```python
-from __future__ import annotations
-
 from typed_agent_hooks import claude_code
 
 app = claude_code.HookApp()
@@ -129,8 +125,6 @@ Shared mode maps a conservative semantic event set from both providers:
 Claude-only events do not get coerced into this layer. `shared.try_from_claude_code(...)` returns `None`; `shared.from_claude_code(...)` raises `NoSharedMappingError`.
 
 ```python
-from __future__ import annotations
-
 from typed_agent_hooks import shared
 
 app = shared.HookApp()

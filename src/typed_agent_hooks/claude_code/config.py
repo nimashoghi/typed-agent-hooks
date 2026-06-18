@@ -1,7 +1,5 @@
 """Typed Claude Code command-hook settings configuration."""
 
-from __future__ import annotations
-
 from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
@@ -68,7 +66,7 @@ class SettingsHooks(StrictModel):
     hooks: dict[ClaudeEventName, list[HookGroup]] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def _matchers_are_supported(self) -> SettingsHooks:
+    def _matchers_are_supported(self) -> "SettingsHooks":
         for event_name, groups in self.hooks.items():
             if event_name in MATCHER_EVENTS:
                 continue
