@@ -11,6 +11,7 @@ from typed_agent_hooks.commands import hookset as hookset_commands
 from typed_agent_hooks.commands.runtime import input_schema, run_hook, validate_input
 from typed_agent_hooks.commands.scaffold import create_project
 from typed_agent_hooks.core import Provider
+from typed_agent_hooks.fastmcp.shim import add_forward_arguments, run_from_args
 from typed_agent_hooks.hooksets import ConfigChange
 
 log = logging.getLogger(__name__)
@@ -119,6 +120,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_forward(args: argparse.Namespace) -> int:
+    # The shim is fail-open and never raises (returns 0 even when no server is
+    # running), so it deliberately does NOT ride main()'s except-tuple (-> 1).
+    return run_from_args(args)
+
+
 def _cmd_validate(args: argparse.Namespace) -> int:
     event = validate_input(
         Provider(args.provider),
@@ -222,6 +229,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_modes = run.add_subparsers(dest="mode", required=True)
     for mode in ("codex", "claude_code", "shared"):
         _add_run_parser(run_modes, mode)
+
+    forward = commands.add_parser(
+        "forward", help="forward one hook payload to a running fastmcp bridge"
+    )
+    add_forward_arguments(forward)
+    forward.set_defaults(handler=_cmd_forward)
 
     validate = commands.add_parser("validate", help="validate one hook payload")
     validate.add_argument(

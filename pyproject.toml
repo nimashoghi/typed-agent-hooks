@@ -25,14 +25,20 @@ classifiers = [
   "Typing :: Typed",
 ]
 
+[project.optional-dependencies]
+# Server-side FastMCP bridge (HookBridge.attach). The shim/rendezvous/wire
+# submodules are stdlib-only and do NOT require this extra.
+fastmcp = ["fastmcp>=3.3,<3.4"]
+
 [project.urls]
 Repository = "https://github.com/nimashoghi/typed-agent-hooks"
 
 [project.scripts]
 typed-agent-hooks = "typed_agent_hooks.cli:main"
+tah-fastmcp-forward = "typed_agent_hooks.fastmcp.shim:main"
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.15", "ty>=0.0.50,<0.1"]
+dev = ["pytest>=8", "ruff>=0.15", "ty>=0.0.50,<0.1", "fastmcp>=3.3,<3.4"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
