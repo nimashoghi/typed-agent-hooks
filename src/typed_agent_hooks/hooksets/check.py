@@ -7,7 +7,7 @@ from typed_agent_hooks import claude_code, codex, shared
 from typed_agent_hooks.loader import load_object
 
 from .compiler import compile_hooksets, resolve_app_spec, target_providers
-from .models import ClaudeCodeHookSet, CodexHookSet, HookSet
+from .models import ClaudeCodeHookSet, CodexHookSet, FastmcpHookSet, HookSet
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +34,17 @@ def check_hookset(
         base_dir=base_dir,
         python_executable=python_executable,
     )
+
+    if isinstance(hookset, FastmcpHookSet):
+        # No local app to import: the dispatch HookApp lives in the running server.
+        return CheckReport(
+            name=hookset.name,
+            mode=hookset.mode,
+            providers=tuple(target_providers(hookset)),
+            configured_events=tuple(sorted({hook.event for hook in hookset.hooks})),
+            extra_handlers=(),
+        )
+
     app_spec = resolve_app_spec(hookset.app, base_dir=base_dir)
     app = load_object(app_spec)
 
