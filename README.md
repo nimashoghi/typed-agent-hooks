@@ -302,6 +302,97 @@ typed-agent-hooks schema claude-code --pretty
 typed-agent-hooks schema shared --pretty
 ```
 
+## FastMCP bridge (`[fastmcp]` extra)
+
+A long-lived FastMCP **stdio** server can receive harness hook events in-process via the optional
+`fastmcp` extra. A thin `forward` shim (run by the harness as a `command` hook) relays each event over
+a unix socket to the running server, which dispatches it through a normal `HookApp` whose handlers
+close over live server state (e.g. an IPython kernel pool).
+
+```bash
+pip install "typed-agent-hooks[fastmcp]"
+```
+
+Server side (only this imports `fastmcp`): attach a bridge after creating the server and before running it.
+
+```python
+from fastmcp import FastMCP
+from typed_agent_hooks import codex
+from typed_agent_hooks.core import PlainTextOutput
+from typed_agent_hooks.fastmcp import attach
+
+mcp = FastMCP("ipi")
+app = codex.HookApp()
+
+
+@app.on(codex.events.SessionStartInput)
+def reground(event: codex.events.SessionStartInput) -> codex.outputs.HookResult:
+    if event.source != "compact":
+        return None
+    return PlainTextOutput(text=server_state_summary())  # closes over live server state
+
+
+attach(mcp, app, provider="codex", server_name="ipi")
+mcp.run()  # stdio
+```
+
+`attach(server, hook_app, *, provider, server_name="ipi", registry_root=None)` accepts a `codex`,
+`claude_code`, or `shared` `HookApp`. Handlers use the usual `@app.on(...)` decorator; the only new
+idea is that they may reach server state through the same lock-guarding API the tools use.
+
+Install the hooks with a `mode = "fastmcp"` hookset (no `app` — the dispatch app lives in the server).
+Scope the tool-event matchers to the server's own tools so binding happens on a real call:
+
+```toml
+name = "ipi-hooks"
+mode = "fastmcp"
+provider = "codex"
+server = "ipi"
+
+[[hooks]]
+event = "SessionStart"
+
+[[hooks]]
+event = "PreToolUse"
+matcher = "^(create_kernel|cell|switch_kernel|list_active_kernels|pdb)$"
+```
+
+```bash
+typed-agent-hooks install ipi-hooks.toml --provider codex --scope project
+```
+
+This writes the `forward` command
+(`python -m typed_agent_hooks forward --provider codex --server-name ipi --hookset-name ipi-hooks`)
+into `.codex/hooks.json`, idempotently and uninstallably (keyed on the `--hookset-name` marker). For
+Claude Code use `provider = "claude_code"` with a `mcp__<server>__.*` matcher.
+
+### Rendezvous
+
+The shim must reach the *correct* server, including when one harness process hosts a main agent and
+subagents that each spawn their own server (Codex). Both the shim and the server independently locate
+the harness process (their lowest common ancestor) and a per-uid registry under `/run/user/<uid>`
+(or `$TMPDIR`). A server self-identifies by:
+
+- **Claude Code**: `CLAUDE_CODE_SESSION_ID` from its environment (eager bind);
+- **Codex**: `_meta.threadId` read from the first tool call via an `on_call_tool` middleware (lazy bind).
+
+The shim keys on `agent_id` (codex `Subagent{Start,Stop}`) else `session_id`, forwards to the matching
+server, and **fails open** (exits 0, no output) whenever no unambiguous server is found. The shim plus
+the `rendezvous`/`wire` modules import no `fastmcp`, so they run in the bare harness hook subprocess.
+
+### Limitations
+
+- Linux only for v1 (`/proc` + `AF_UNIX` + `SO_PEERCRED`); elsewhere the shim fails open (no-op).
+- A Codex subagent's *tool* hooks carry only the parent `session_id`, so when multiple subagent servers
+  coexist they are deliberately a safe no-op rather than risk misrouting; `Subagent{Start,Stop}` (which
+  carry `agent_id`) buffer-and-resolve. A subagent that never calls a tool never binds, so its start-hook
+  output cannot be delivered.
+- Requires `fastmcp >= 3.3, < 3.4` (the bridge depends on the single-`_lifespan` wrap and the
+  `request_context.meta` passthrough).
+
+The rendezvous was verified live on Codex (`_meta.threadId` reaches the middleware; root
+`threadId == session_id`, subagent `threadId == agent_id`) and the Claude env-bind corroborated.
+
 ## Strictness boundary
 
 Outer event and output envelopes are closed Pydantic models:

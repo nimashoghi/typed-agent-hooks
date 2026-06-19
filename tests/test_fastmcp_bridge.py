@@ -183,3 +183,31 @@ def test_inactive_when_no_harness_anchor(short_base, monkeypatch):
 
     asyncio.run(body())
     assert state["ok"] is True and state["no_anchor_dir"] is True
+
+
+def test_slow_handler_times_out_to_noop(short_base, monkeypatch):
+    import time
+
+    monkeypatch.setattr(B, "_DISPATCH_TIMEOUT", 0.1)
+    _patch_registry(monkeypatch, short_base)
+
+    app = codex.HookApp()
+
+    @app.on(codex.events.SessionStartInput)
+    def _slow(ev):
+        time.sleep(0.5)  # exceeds the dispatch timeout
+        return PlainTextOutput(text="LATE")
+
+    server = FastMCP("t", lifespan=lambda s: _yield(None))
+    B.attach(server, app, provider="codex", server_name="ipi")
+
+    state: dict = {}
+
+    async def body():
+        async with server._lifespan(server):
+            desc = rz.list_descriptors(short_base / "100-200")[0]
+            state["resp"] = await _client_forward(desc, SESSION_START, key="s")
+
+    asyncio.run(body())
+    # G5: a slow/blocked handler returns a safe no-op, never hanging the harness.
+    assert state["resp"]["ok"] is False and state["resp"]["stdout"] == ""
