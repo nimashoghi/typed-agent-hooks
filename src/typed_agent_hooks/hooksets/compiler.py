@@ -3,7 +3,7 @@
 import shlex
 import sys
 from pathlib import Path
-from typing import Literal, TypeAlias
+from typing import Literal, TypeAlias, cast
 
 from typed_agent_hooks import claude_code, codex
 
@@ -11,6 +11,7 @@ from .mapping import SHARED_TO_CLAUDE_CODE, SHARED_TO_CODEX
 from .models import (
     ClaudeCodeHookSet,
     CodexHookSet,
+    FastmcpHookSet,
     HookSet,
     ProviderName,
     SharedHookSet,
@@ -29,6 +30,8 @@ def target_providers(
         allowed: tuple[ProviderName, ...] = ("codex",)
     elif isinstance(hookset, ClaudeCodeHookSet):
         allowed = ("claude_code",)
+    elif isinstance(hookset, FastmcpHookSet):
+        allowed = (hookset.provider,)
     else:
         allowed = tuple(hookset.providers)
 
@@ -64,6 +67,20 @@ def _runner_args(
         args.extend(["--provider", provider.replace("_", "-")])
     args.extend(["--hookset-name", hookset_name])
     return args
+
+
+def _forward_runner_args(provider: ProviderName, server: str, hookset_name: str) -> list[str]:
+    return [
+        "-m",
+        "typed_agent_hooks",
+        "forward",
+        "--provider",
+        provider.replace("_", "-"),
+        "--server-name",
+        server,
+        "--hookset-name",
+        hookset_name,
+    ]
 
 
 def _codex_command(
@@ -184,6 +201,46 @@ def _compile_claude_code(
     return claude_code.config.SettingsHooks(hooks=hooks)
 
 
+def _compile_fastmcp(
+    hookset: FastmcpHookSet,
+    *,
+    provider: ProviderName,
+    python_executable: str,
+) -> CompiledConfig:
+    args = _forward_runner_args(provider, hookset.server, hookset.name)
+    if provider == "codex":
+        command = shlex.join([python_executable, *args])
+        codex_hooks: dict[codex.events.CodexEventName, list[codex.config.HookGroup]] = {}
+        for spec in hookset.hooks:
+            handler = codex.config.CommandHook(
+                command=command,
+                timeout=spec.timeout,
+                status_message=spec.status_message,
+                command_windows=spec.command_windows,
+            )
+            group = codex.config.HookGroup(matcher=spec.matcher, hooks=[handler])
+            codex_hooks.setdefault(cast(codex.events.CodexEventName, spec.event), []).append(group)
+        return codex.config.HooksFile(hooks=codex_hooks)
+
+    claude_hooks: dict[claude_code.events.ClaudeEventName, list[claude_code.config.HookGroup]] = {}
+    for spec in hookset.hooks:
+        handler = claude_code.config.CommandHook(
+            command=python_executable,
+            args=args,
+            timeout=spec.timeout,
+            status_message=spec.status_message,
+            condition=spec.condition,
+            async_=spec.async_,
+            async_rewake=spec.async_rewake,
+            shell=spec.shell,
+        )
+        group = claude_code.config.HookGroup(matcher=spec.matcher, hooks=[handler])
+        claude_hooks.setdefault(cast(claude_code.events.ClaudeEventName, spec.event), []).append(
+            group
+        )
+    return claude_code.config.SettingsHooks(hooks=claude_hooks)
+
+
 def compile_hookset(
     hookset: HookSet,
     *,
@@ -195,6 +252,8 @@ def compile_hookset(
 
     target_providers(hookset, provider)
     executable = python_executable or sys.executable
+    if isinstance(hookset, FastmcpHookSet):
+        return _compile_fastmcp(hookset, provider=provider, python_executable=executable)
     app_spec = resolve_app_spec(hookset.app, base_dir=base_dir)
 
     if provider == "codex":

@@ -3,7 +3,7 @@
 import sys
 from importlib import import_module
 from pathlib import Path
-from typing import Annotated, Literal, Protocol, TypeAlias, cast
+from typing import Annotated, Literal, Protocol, TypeAlias, cast, get_args
 
 from pydantic import Field, TypeAdapter, model_validator
 
@@ -147,8 +147,50 @@ class SharedHookSet(StrictModel):
         return self
 
 
+class FastmcpHookSpec(StrictModel):
+    """One event forwarded to a running FastMCP bridge (provider-native event name)."""
+
+    event: str
+    matcher: str | None = None
+    timeout: PositiveSeconds | None = None
+    status_message: str | None = None
+    condition: str | None = Field(default=None, validation_alias="if", serialization_alias="if")
+    async_: bool | None = Field(default=None, validation_alias="async", serialization_alias="async")
+    async_rewake: bool | None = Field(
+        default=None, validation_alias="asyncRewake", serialization_alias="asyncRewake"
+    )
+    shell: str | None = None
+    command_windows: str | None = None
+
+
+class FastmcpHookSet(StrictModel):
+    """Hookset forwarded to a running FastMCP bridge; the dispatch app lives in the server.
+
+    Targets a single provider with provider-native event names/matchers and has no
+    local ``app`` (the installed command is the ``forward`` shim, not ``run``).
+    """
+
+    name: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
+    mode: Literal["fastmcp"]
+    provider: ProviderName
+    server: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
+    hooks: list[FastmcpHookSpec] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _events_valid_for_provider(self) -> "FastmcpHookSet":
+        valid = (
+            set(get_args(codex.events.CodexEventName))
+            if self.provider == "codex"
+            else set(get_args(claude_code.events.ClaudeEventName))
+        )
+        unknown = {hook.event for hook in self.hooks} - valid
+        if unknown:
+            raise ValueError(f"unsupported {self.provider} events: {', '.join(sorted(unknown))}")
+        return self
+
+
 HookSet: TypeAlias = Annotated[
-    CodexHookSet | ClaudeCodeHookSet | SharedHookSet,
+    CodexHookSet | ClaudeCodeHookSet | SharedHookSet | FastmcpHookSet,
     Field(discriminator="mode"),
 ]
 HOOKSET_ADAPTER: TypeAdapter[HookSet] = TypeAdapter(HookSet)
