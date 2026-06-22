@@ -47,7 +47,7 @@ _MAX_RESOLVE_ATTEMPTS = 2  # re-resolve once after pruning a stale descriptor
 # events never wait: a missing server mid-session is an immediate no-op.
 _STARTUP_EVENTS = frozenset({"SessionStart", "SubagentStart"})
 _STARTUP_WAIT_ENV = "TAH_FORWARD_STARTUP_WAIT_S"
-_STARTUP_WAIT_S = 5.0  # override via $TAH_FORWARD_STARTUP_WAIT_S (0 disables)
+_STARTUP_WAIT_S = 60.0  # override via $TAH_FORWARD_STARTUP_WAIT_S (0 disables)
 _STARTUP_POLL_SLEEP = 0.1
 
 
@@ -118,7 +118,7 @@ def _await_startup_descriptor(adir: Path, server_name: str) -> None:
     The server (and its bridge) may still be launching when the harness fires the
     startup hook; polling for a live descriptor lets the event be delivered once
     the server is up instead of being dropped. Bounded by
-    ``$TAH_FORWARD_STARTUP_WAIT_S`` (default 5s; 0 disables). Exits as soon as a
+    ``$TAH_FORWARD_STARTUP_WAIT_S`` (default 60s; 0 disables). Exits as soon as a
     descriptor appears.
     """
 

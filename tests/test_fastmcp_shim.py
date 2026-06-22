@@ -224,6 +224,7 @@ def test_run_no_descriptors_is_noop(tmp_path, monkeypatch):
     base.mkdir(mode=0o700)
     (base / "100-200").mkdir(mode=0o700)
     _patch_registry(monkeypatch, base)
+    monkeypatch.setenv("TAH_FORWARD_STARTUP_WAIT_S", "0")  # don't wait the startup default
     rc, out = _run(monkeypatch, {"session_id": "S", "hook_event_name": "SessionStart"})
     assert rc == 0 and out == ""
 
