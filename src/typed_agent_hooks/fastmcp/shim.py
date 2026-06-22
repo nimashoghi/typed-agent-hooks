@@ -41,6 +41,15 @@ _CONNECT_RETRY_SLEEP = 0.05  # listener-start race window
 _FORWARD_TIMEOUT = 2.0
 _MAX_RESOLVE_ATTEMPTS = 2  # re-resolve once after pruning a stale descriptor
 
+# Events fired at session/subagent start, when the server (and its bridge) may
+# still be launching. For these, briefly wait for a descriptor to appear so the
+# startup event isn't silently dropped (the SessionStart-before-MCP race). Other
+# events never wait: a missing server mid-session is an immediate no-op.
+_STARTUP_EVENTS = frozenset({"SessionStart", "SubagentStart"})
+_STARTUP_WAIT_ENV = "TAH_FORWARD_STARTUP_WAIT_S"
+_STARTUP_WAIT_S = 5.0  # override via $TAH_FORWARD_STARTUP_WAIT_S (0 disables)
+_STARTUP_POLL_SLEEP = 0.1
+
 
 class _Forward(NamedTuple):
     connected: bool
@@ -91,6 +100,36 @@ def _live_descriptors(adir: Path, server_name: str) -> list[dict]:
         for d in rz.list_descriptors(adir)
         if d.get("server_name") == server_name and rz.descriptor_is_live(d)
     ]
+
+
+def _startup_wait_seconds() -> float:
+    raw = os.environ.get(_STARTUP_WAIT_ENV)
+    if raw is None:
+        return _STARTUP_WAIT_S
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return _STARTUP_WAIT_S
+
+
+def _await_startup_descriptor(adir: Path, server_name: str) -> None:
+    """On a session/subagent-start event, briefly wait for the server's descriptor.
+
+    The server (and its bridge) may still be launching when the harness fires the
+    startup hook; polling for a live descriptor lets the event be delivered once
+    the server is up instead of being dropped. Bounded by
+    ``$TAH_FORWARD_STARTUP_WAIT_S`` (default 5s; 0 disables). Exits as soon as a
+    descriptor appears.
+    """
+
+    wait = _startup_wait_seconds()
+    if wait <= 0.0 or _live_descriptors(adir, server_name):
+        return
+    deadline = time.monotonic() + wait
+    while time.monotonic() < deadline:
+        time.sleep(_STARTUP_POLL_SLEEP)
+        if _live_descriptors(adir, server_name):
+            return
 
 
 def _is_own_identity_event(provider: str, event: dict) -> bool:
@@ -173,6 +212,9 @@ def _run(args: argparse.Namespace) -> None:
     if anchor is None:
         return
     adir = rz.anchor_dir(base, anchor)
+
+    if event.get("hook_event_name") in _STARTUP_EVENTS:
+        _await_startup_descriptor(adir, args.server_name)
 
     for _ in range(_MAX_RESOLVE_ATTEMPTS):
         descs = _live_descriptors(adir, args.server_name)

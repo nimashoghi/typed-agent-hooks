@@ -231,3 +231,62 @@ def test_run_no_descriptors_is_noop(tmp_path, monkeypatch):
 def test_run_empty_stdin_is_noop(monkeypatch):
     monkeypatch.setattr("sys.stdin", io.StringIO(""))
     assert shim.run_from_args(_args()) == 0
+
+
+# ---- startup-event wait (SessionStart-before-MCP race) ----
+
+
+def test_startup_event_waits_for_late_descriptor(tmp_path, monkeypatch):
+    import time
+
+    base = tmp_path / "base"
+    base.mkdir(mode=0o700)
+    adir = base / "100-200"
+    adir.mkdir(mode=0o700)
+    _patch_registry(monkeypatch, base)
+    monkeypatch.setenv("TAH_FORWARD_STARTUP_WAIT_S", "5")
+    monkeypatch.setattr(shim, "_STARTUP_POLL_SLEEP", 0.02)
+
+    holder: dict[str, FakeServer] = {}
+
+    def _bring_up_server() -> None:
+        time.sleep(0.3)  # server (and its descriptor) appear mid-wait
+        sp = str(rz.socket_path(adir, "abc"))
+        holder["srv"] = FakeServer(sp, wire.response_frame(ok=True, stdout="LATE_OK"))
+        _make_descriptor(adir, nonce="abc", bound_key="S")
+
+    t = threading.Thread(target=_bring_up_server)
+    t.start()
+    try:
+        rc, out = _run(monkeypatch, {"session_id": "S", "hook_event_name": "SessionStart"})
+        assert rc == 0 and out == "LATE_OK"  # waited for the server, then forwarded
+    finally:
+        t.join()
+        if "srv" in holder:
+            holder["srv"].close()
+
+
+def test_non_startup_event_does_not_wait(tmp_path, monkeypatch):
+    import time
+
+    base = tmp_path / "base"
+    base.mkdir(mode=0o700)
+    (base / "100-200").mkdir(mode=0o700)
+    _patch_registry(monkeypatch, base)
+    monkeypatch.setenv("TAH_FORWARD_STARTUP_WAIT_S", "5")
+    start = time.monotonic()
+    rc, out = _run(monkeypatch, {"session_id": "S", "hook_event_name": "PreToolUse"})
+    assert rc == 0 and out == "" and (time.monotonic() - start) < 1.0  # no wait mid-session
+
+
+def test_startup_wait_zero_disables(tmp_path, monkeypatch):
+    import time
+
+    base = tmp_path / "base"
+    base.mkdir(mode=0o700)
+    (base / "100-200").mkdir(mode=0o700)
+    _patch_registry(monkeypatch, base)
+    monkeypatch.setenv("TAH_FORWARD_STARTUP_WAIT_S", "0")
+    start = time.monotonic()
+    rc, out = _run(monkeypatch, {"session_id": "S", "hook_event_name": "SessionStart"})
+    assert rc == 0 and out == "" and (time.monotonic() - start) < 1.0  # disabled
