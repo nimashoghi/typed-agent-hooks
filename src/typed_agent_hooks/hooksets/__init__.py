@@ -9,6 +9,7 @@ from .compiler import (
     resolve_app_spec,
     target_providers,
 )
+from .forward import self_install_spec, uvx_forward_command
 from .install import (
     ConfigChange,
     Scope,
@@ -61,6 +62,8 @@ __all__ = [
     "read_hookset",
     "read_json_object",
     "resolve_app_spec",
+    "self_install_spec",
     "target_providers",
     "uninstall_config",
+    "uvx_forward_command",
 ]

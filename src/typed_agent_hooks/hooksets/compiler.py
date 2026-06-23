@@ -69,11 +69,8 @@ def _runner_args(
     return args
 
 
-def _forward_runner_args(provider: ProviderName, server: str, hookset_name: str) -> list[str]:
+def _forward_args(provider: ProviderName, server: str, hookset_name: str) -> list[str]:
     return [
-        "-m",
-        "typed_agent_hooks",
-        "forward",
         "--provider",
         provider.replace("_", "-"),
         "--server-name",
@@ -81,6 +78,12 @@ def _forward_runner_args(provider: ProviderName, server: str, hookset_name: str)
         "--hookset-name",
         hookset_name,
     ]
+
+
+def _default_forward_launcher(python_executable: str) -> list[str]:
+    """The plain ``<python> -m typed_agent_hooks forward`` launcher prefix."""
+
+    return [python_executable, "-m", "typed_agent_hooks", "forward"]
 
 
 def _codex_command(
@@ -206,10 +209,12 @@ def _compile_fastmcp(
     *,
     provider: ProviderName,
     python_executable: str,
+    forward_command: list[str] | None = None,
 ) -> CompiledConfig:
-    args = _forward_runner_args(provider, hookset.server, hookset.name)
+    launcher = forward_command or _default_forward_launcher(python_executable)
+    fwd = _forward_args(provider, hookset.server, hookset.name)
     if provider == "codex":
-        command = shlex.join([python_executable, *args])
+        command = shlex.join([*launcher, *fwd])
         codex_hooks: dict[codex.events.CodexEventName, list[codex.config.HookGroup]] = {}
         for spec in hookset.hooks:
             handler = codex.config.CommandHook(
@@ -222,11 +227,12 @@ def _compile_fastmcp(
             codex_hooks.setdefault(cast(codex.events.CodexEventName, spec.event), []).append(group)
         return codex.config.HooksFile(hooks=codex_hooks)
 
+    exe, exe_args = launcher[0], [*launcher[1:], *fwd]
     claude_hooks: dict[claude_code.events.ClaudeEventName, list[claude_code.config.HookGroup]] = {}
     for spec in hookset.hooks:
         handler = claude_code.config.CommandHook(
-            command=python_executable,
-            args=args,
+            command=exe,
+            args=exe_args,
             timeout=spec.timeout,
             status_message=spec.status_message,
             condition=spec.condition,
@@ -247,13 +253,25 @@ def compile_hookset(
     provider: ProviderName,
     base_dir: str | Path = ".",
     python_executable: str | None = None,
+    forward_command: list[str] | None = None,
 ) -> CompiledConfig:
-    """Compile one hookset for one explicit provider."""
+    """Compile one hookset for one explicit provider.
+
+    For FastMCP forwarding hooksets, ``forward_command`` overrides the launcher
+    prefix (default ``<python_executable> -m typed_agent_hooks forward``); e.g.
+    pass :func:`uvx_forward_command` for a self-bootstrapping ``uvx`` command
+    that survives ephemeral interpreters. It is ignored for other hookset modes.
+    """
 
     target_providers(hookset, provider)
     executable = python_executable or sys.executable
     if isinstance(hookset, FastmcpHookSet):
-        return _compile_fastmcp(hookset, provider=provider, python_executable=executable)
+        return _compile_fastmcp(
+            hookset,
+            provider=provider,
+            python_executable=executable,
+            forward_command=forward_command,
+        )
     app_spec = resolve_app_spec(hookset.app, base_dir=base_dir)
 
     if provider == "codex":
@@ -271,6 +289,7 @@ def compile_hooksets(
     provider: ProviderSelection = "all",
     base_dir: str | Path = ".",
     python_executable: str | None = None,
+    forward_command: list[str] | None = None,
 ) -> dict[ProviderName, CompiledConfig]:
     """Compile a hookset for every selected provider."""
 
@@ -280,6 +299,7 @@ def compile_hooksets(
             provider=target,
             base_dir=base_dir,
             python_executable=python_executable,
+            forward_command=forward_command,
         )
         for target in target_providers(hookset, provider)
     }

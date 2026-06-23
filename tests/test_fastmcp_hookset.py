@@ -87,6 +87,38 @@ def test_compile_claude_emits_forward_command():
     ]
 
 
+_UVX = ["uvx", "--from", "git+https://github.com/o/r@deadbeef", "tah-fastmcp-forward"]
+
+
+def test_compile_codex_uses_forward_command_launcher():
+    configs = compile_hooksets(parse_hookset(CODEX_TOML), forward_command=_UVX)
+    cmd = configs["codex"].hooks["PreToolUse"][0].hooks[0].command
+    assert cmd == (
+        "uvx --from git+https://github.com/o/r@deadbeef tah-fastmcp-forward "
+        "--provider codex --server-name ipi --hookset-name ipi-hooks"
+    )
+    assert "typed_agent_hooks" not in cmd  # no baked -m launcher; uvx resolves it
+
+
+def test_compile_claude_uses_forward_command_launcher():
+    configs = compile_hooksets(parse_hookset(CLAUDE_TOML), forward_command=_UVX)
+    cfg = configs["claude_code"]
+    assert isinstance(cfg, claude_code.config.SettingsHooks)
+    handler = cfg.hooks["PreToolUse"][0].hooks[0]
+    assert handler.command == "uvx"
+    assert handler.args == [
+        "--from",
+        "git+https://github.com/o/r@deadbeef",
+        "tah-fastmcp-forward",
+        "--provider",
+        "claude-code",
+        "--server-name",
+        "ipi",
+        "--hookset-name",
+        "ipi-hooks",
+    ]
+
+
 def test_check_needs_no_local_app():
     report = check_hookset(parse_hookset(CODEX_TOML))
     assert report.mode == "fastmcp"
