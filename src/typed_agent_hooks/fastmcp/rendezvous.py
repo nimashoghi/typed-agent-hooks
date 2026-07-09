@@ -2,7 +2,10 @@
 
 Imports **no** ``fastmcp`` (and no codex/claude) so the shim can use it in the
 harness's hook subprocess. Linux-only (``/proc`` + ``AF_UNIX`` + ``SO_PEERCRED``);
-callers fail open on other platforms.
+where the primitives are missing (:func:`supported` false, e.g. native Windows)
+:func:`runtime_base` returns ``None`` and callers stay inactive / fail open. A
+native Windows port would need named pipes plus a pid+starttime process identity
+in place of ``/proc``.
 
 Registry base (shared by server and shim, computed identically and WITHOUT
 depending on ``$XDG_RUNTIME_DIR`` — which codex strips from the MCP server env
@@ -100,6 +103,18 @@ def find_harness_anchor(start_pid: int | None = None) -> tuple[int, int] | None:
 # --------------------------------------------------------------------------- #
 
 
+def supported() -> bool:
+    """True when the platform has the primitives the secure registry needs
+    (POSIX euid ownership + ``AF_UNIX``; Linux in practice).
+
+    A call-time capability check rather than ``sys.platform``: it keeps macOS
+    behavior unchanged (base works; the ``/proc`` anchor probe keeps the bridge
+    inactive) and lets tests exercise the real mechanism by deleting the
+    attributes.
+    """
+    return hasattr(os, "geteuid") and hasattr(socket, "AF_UNIX")
+
+
 def _verify_secure_dir(path: Path) -> bool:
     """True iff ``path`` is a real directory (not a symlink) owned by euid, 0700."""
     try:
@@ -130,6 +145,8 @@ def _ensure_secure_dir(path: Path) -> bool:
 
 def runtime_base(explicit: Path | None = None) -> Path | None:
     """Per-uid registry base; ``None`` if no secure base is available."""
+    if not supported():
+        return None  # e.g. native Windows -> bridge inactive, shim no-op
     if explicit is not None:
         base = Path(explicit)
         return base if _ensure_secure_dir(base) else None

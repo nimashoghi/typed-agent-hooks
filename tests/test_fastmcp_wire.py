@@ -38,7 +38,9 @@ def test_correlation_key_missing_or_unknown():
 
 
 def test_frame_roundtrip_over_socketpair():
-    a, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+    # default family: AF_UNIX on POSIX, AF_INET emulation on Windows — the
+    # framing is transport-agnostic, so this test runs everywhere.
+    a, b = socket.socketpair()
     try:
         obj = {"payload": {"text": "line1\nline2", "nested": [1, {"x": "}{"}]}, "k": "v"}
         wire.send_frame(a, obj)
@@ -52,7 +54,7 @@ def test_frame_roundtrip_over_socketpair():
 
 
 def test_recv_frame_truncated_raises():
-    a, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+    a, b = socket.socketpair()  # default family; see roundtrip test above
     try:
         a.sendall(wire.encode_frame({"x": "y"})[:3])  # partial header only
         a.close()

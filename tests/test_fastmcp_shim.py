@@ -9,10 +9,17 @@ import json
 import os
 import socket
 import struct
+import sys
 import threading
+
+import pytest
 
 from typed_agent_hooks.fastmcp import rendezvous as rz
 from typed_agent_hooks.fastmcp import shim, wire
+
+pytestmark = pytest.mark.skipif(
+    sys.platform != "linux", reason="rendezvous is Linux-only (/proc + AF_UNIX + 0700 modes)"
+)
 
 
 class FakeServer:

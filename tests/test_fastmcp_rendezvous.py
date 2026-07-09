@@ -3,8 +3,19 @@
 from __future__ import annotations
 
 import os
+import sys
+
+import pytest
 
 from typed_agent_hooks.fastmcp import rendezvous as rz
+
+pytestmark = pytest.mark.skipif(
+    sys.platform != "linux", reason="rendezvous is Linux-only (/proc + AF_UNIX + 0700 modes)"
+)
+
+
+def test_supported_true_on_linux():
+    assert rz.supported() is True
 
 
 def test_parse_proc_stat_handles_parens_in_comm():

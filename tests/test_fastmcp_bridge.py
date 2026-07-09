@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+import sys
 import tempfile
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
@@ -27,6 +28,10 @@ from typed_agent_hooks.core import PlainTextOutput  # noqa: E402
 from typed_agent_hooks.fastmcp import bridge as B  # noqa: E402
 from typed_agent_hooks.fastmcp import rendezvous as rz  # noqa: E402
 from typed_agent_hooks.fastmcp import wire  # noqa: E402
+
+pytestmark = pytest.mark.skipif(
+    sys.platform != "linux", reason="rendezvous is Linux-only (/proc + AF_UNIX + 0700 modes)"
+)
 
 # A valid Codex SessionStart payload (mirrors tests/fixtures/codex_inputs.json).
 SESSION_START = {

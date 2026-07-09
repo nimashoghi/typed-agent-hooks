@@ -53,6 +53,9 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.ty.environment]
 python-version = "3.10"
+# rendezvous targets Linux APIs (geteuid/AF_UNIX/SO_PEERCRED); without the pin
+# ty infers the host OS and flags them on Windows/macOS dev machines.
+python-platform = "linux"
 root = ["./src"]
 
 [tool.ty.src]

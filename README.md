@@ -382,7 +382,10 @@ the `rendezvous`/`wire` modules import no `fastmcp`, so they run in the bare har
 
 ### Limitations
 
-- Linux only for v1 (`/proc` + `AF_UNIX` + `SO_PEERCRED`); elsewhere the shim fails open (no-op).
+- Linux only for v1 (`/proc` + `AF_UNIX` + `SO_PEERCRED`). Elsewhere everything fails open: the
+  shim exits 0 as a no-op and the server-side bridge stays inactive (the host MCP server is never
+  taken down; startup problems are logged as warnings to stderr). A native Windows port would need
+  named pipes plus a pid+starttime process identity in place of `/proc`.
 - A Codex subagent's *tool* hooks carry only the parent `session_id`, so when multiple subagent servers
   coexist they are deliberately a safe no-op rather than risk misrouting; `Subagent{Start,Stop}` (which
   carry `agent_id`) buffer-and-resolve. A subagent that never calls a tool never binds, so its start-hook

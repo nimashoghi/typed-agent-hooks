@@ -14,8 +14,10 @@ server so that, on the serving event loop, it:
 
 This module is the ONLY part of the subpackage that imports ``fastmcp`` (provided
 by the ``[fastmcp]`` extra). If no harness ancestor is found (e.g. an HTTP server
-not launched by the harness), the bridge stays an inactive no-op and the server
-serves tools normally.
+not launched by the harness), on platforms without the rendezvous primitives
+(no ``AF_UNIX``/``geteuid``, e.g. native Windows), and if bridge startup fails
+for any other reason (logged warning), the bridge stays an inactive no-op and
+the server serves tools normally — the bridge never takes down the host server.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import atexit
 import contextlib
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -40,6 +43,9 @@ except Exception:  # pragma: no cover
 
 _DISPATCH_TIMEOUT = 30.0  # a slow/blocked handler returns no-op rather than hanging
 _PROVIDERS = ("codex", "claude_code", "shared")
+
+# stderr via logging's last-resort handler; NEVER stdout (it carries MCP framing).
+_log = logging.getLogger(__name__)
 
 
 class _ThreadIdCapture(Middleware):
@@ -116,11 +122,20 @@ class HookBridge:
         @asynccontextmanager
         async def wrapped(server: Any):
             async with original(server) as result:  # preserve _lifespan_result bookkeeping
-                await self._startup()
+                try:
+                    await self._startup()
+                except Exception:
+                    # The bridge must never take down the host server: degrade to
+                    # inactive (tools serve, hooks are no-ops).
+                    _log.warning("hook bridge startup failed; bridge disabled", exc_info=True)
                 try:
                     yield result  # yield the ORIGINAL lifespan result unchanged
                 finally:
-                    await self._teardown()
+                    try:
+                        await self._teardown()
+                    except Exception:
+                        # A raise here would MASK an in-flight exception (finally).
+                        _log.warning("hook bridge teardown failed", exc_info=True)
 
         self._server._lifespan = wrapped
 
