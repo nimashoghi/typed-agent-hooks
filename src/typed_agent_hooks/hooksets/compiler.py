@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal, TypeAlias, cast
 
 from typed_agent_hooks import claude_code, codex
+from typed_agent_hooks.loader import split_object_spec
 
 from .mapping import SHARED_TO_CLAUDE_CODE, SHARED_TO_CODEX
 from .models import (
@@ -45,7 +46,7 @@ def target_providers(
 def resolve_app_spec(app: str, *, base_dir: str | Path) -> str:
     """Resolve a file-based app spec relative to its hookset file."""
 
-    target, object_name = app.split(":", 1)
+    target, object_name = split_object_spec(app)
     is_path = target.endswith(".py") or "/" in target or "\\" in target
     if not is_path:
         return app

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from typed_agent_hooks.hooksets import forward, self_install_spec, uvx_forward_command
@@ -54,5 +56,5 @@ def test_uvx_forward_command_explicit_spec() -> None:
     cmd = uvx_forward_command("git+https://github.com/o/r@abc123")
     # Ends in the uvx --from <spec> <console-script> launcher prefix.
     assert cmd[-3:] == ["--from", "git+https://github.com/o/r@abc123", "tah-fastmcp-forward"]
-    # Launches via uvx or `uv tool run`.
-    assert cmd[0].endswith("uvx") or cmd[1:3] == ["tool", "run"]
+    # Launches via uvx or `uv tool run` (which() may return uvx.exe on Windows).
+    assert Path(cmd[0]).stem.lower() == "uvx" or cmd[1:3] == ["tool", "run"]

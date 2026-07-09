@@ -20,11 +20,15 @@ def _prepend_sys_path(path: Path) -> Iterator[None]:
             sys.path.remove(value)
 
 
-def _split_spec(spec: str) -> tuple[str, str]:
-    if ":" not in spec:
-        raise ValueError("object spec must be 'module:object' or 'path.py:object'")
-    target, object_name = spec.split(":", 1)
-    if not target or not object_name:
+def split_object_spec(spec: str) -> tuple[str, str]:
+    """Split ``target:object`` into its parts.
+
+    Splits on the LAST colon — a Windows absolute path carries one in its drive
+    prefix (``C:\\x\\app.py:app``) — and requires the object part to be a Python
+    identifier (it is resolved with a plain ``getattr``).
+    """
+    target, sep, object_name = spec.rpartition(":")
+    if not sep or not target or not object_name.isidentifier():
         raise ValueError("object spec must be 'module:object' or 'path.py:object'")
     return target, object_name
 
@@ -71,7 +75,7 @@ def load_object(spec: str, *, base_dir: str | Path | None = None) -> object:
         AttributeError: If the requested object does not exist.
     """
 
-    target, object_name = _split_spec(spec)
+    target, object_name = split_object_spec(spec)
     if _looks_like_path(target):
         path = Path(target).expanduser()
         if not path.is_absolute() and base_dir is not None:

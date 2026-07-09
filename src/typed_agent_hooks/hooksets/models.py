@@ -9,6 +9,7 @@ from pydantic import Field, TypeAdapter, model_validator
 
 from typed_agent_hooks import claude_code, codex
 from typed_agent_hooks.core import StrictModel
+from typed_agent_hooks.loader import split_object_spec
 from typed_agent_hooks.shared.events import SharedEventName
 
 
@@ -197,11 +198,10 @@ HOOKSET_ADAPTER: TypeAdapter[HookSet] = TypeAdapter(HookSet)
 
 
 def _validate_app_spec(app: str) -> None:
-    if ":" not in app:
-        raise ValueError("app must be 'module:object' or 'path.py:object'")
-    target, object_name = app.split(":", 1)
-    if not target or not object_name:
-        raise ValueError("app must be 'module:object' or 'path.py:object'")
+    try:
+        split_object_spec(app)
+    except ValueError:
+        raise ValueError("app must be 'module:object' or 'path.py:object'") from None
 
 
 def parse_hookset(data: str | bytes) -> HookSet:
