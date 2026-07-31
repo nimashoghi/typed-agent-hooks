@@ -157,7 +157,7 @@ class HookBridge:
         with contextlib.suppress(OSError):
             os.chmod(sock_path, 0o600)  # do not trust umask
 
-        st = rz.read_proc_stat(os.getpid())
+        st = rz.process_stat(os.getpid())
         bound_key = os.environ.get("CLAUDE_CODE_SESSION_ID") or None
         self._descriptor = rz.Descriptor(
             server_nonce=self._nonce,

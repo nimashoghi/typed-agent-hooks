@@ -10,7 +10,9 @@ import pytest
 from typed_agent_hooks.fastmcp import rendezvous as rz
 
 pytestmark = pytest.mark.skipif(
-    sys.platform != "linux", reason="rendezvous is Linux-only (/proc + AF_UNIX + 0700 modes)"
+    sys.platform != "linux",
+    reason="exercises the Linux implementation (/proc + AF_UNIX + 0700 modes); "
+    "the darwin primitives are covered by test_fastmcp_rendezvous_darwin.py",
 )
 
 

@@ -1,20 +1,23 @@
-"""Stdlib + ``/proc`` only registry/rendezvous primitives for the FastMCP bridge.
+"""Stdlib-only registry/rendezvous primitives for the FastMCP bridge.
 
 Imports **no** ``fastmcp`` (and no codex/claude) so the shim can use it in the
-harness's hook subprocess. Linux-only (``/proc`` + ``AF_UNIX`` + ``SO_PEERCRED``);
-where the primitives are missing (:func:`supported` false, e.g. native Windows)
+harness's hook subprocess. POSIX-only (``AF_UNIX`` + euid ownership): process
+identity comes from ``/proc`` on Linux and from a ``ps``(1) snapshot on macOS.
+Where the primitives are missing (:func:`supported` false, e.g. native Windows)
 :func:`runtime_base` returns ``None`` and callers stay inactive / fail open. A
 native Windows port would need named pipes plus a pid+starttime process identity
 in place of ``/proc``.
 
 Registry base (shared by server and shim, computed identically and WITHOUT
-depending on ``$XDG_RUNTIME_DIR`` — which codex strips from the MCP server env
-while the shim inherits it): prefer the systemd runtime dir derived from euid
-(``/run/user/<euid>``, tmpfs, short socket paths) when it is a secure 0700 dir,
-else a per-uid dir under ``$TMPDIR``/``/tmp``. Both sides derive the same path by
+depending on environment the harness treats unevenly — codex strips
+``$XDG_RUNTIME_DIR`` from the MCP server env while the shim inherits it, and
+``$TMPDIR`` is similarly untrustworthy on macOS): on Linux prefer the systemd
+runtime dir derived from euid (``/run/user/<euid>``, tmpfs, short socket paths)
+when it is a secure 0700 dir, else a per-uid dir under ``$TMPDIR``/``/tmp``; on
+macOS always the per-uid dir under ``/tmp``. Both sides derive the same path by
 construction, so no anchor "ROOT" marker is needed.
 
-Anchor: the nearest process-ancestor whose ``comm`` is a known harness
+Anchor: the nearest process-ancestor whose name is a known harness
 (``codex``/``claude``) — the lowest common ancestor of the server and the hook.
 Keyed by ``(pid, starttime)`` for pid-reuse safety.
 """
@@ -29,6 +32,8 @@ import secrets
 import socket
 import stat
 import struct
+import subprocess
+import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -73,26 +78,105 @@ def read_proc_stat(pid: int) -> tuple[int, int, str] | None:
     return parse_proc_stat(data)
 
 
+# --------------------------------------------------------------------------- #
+# darwin process identity (ps(1) snapshot; macOS has no /proc)
+# --------------------------------------------------------------------------- #
+
+# `lstart` under LC_ALL=C, e.g. "Thu Jul 31 21:10:33 2026": stable per process
+# and second-granular, so it doubles as the pid-reuse guard starttime.
+_PS_LSTART_FORMAT = "%a %b %d %H:%M:%S %Y"
+_PS_LSTART_FIELDS = 5
+
+
+def _run_ps(argv: list[str]) -> str | None:
+    env = dict(os.environ, LC_ALL="C")
+    try:
+        proc = subprocess.run(
+            argv, capture_output=True, text=True, timeout=5, env=env, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return proc.stdout if proc.returncode == 0 else None
+
+
+def parse_ps_line(line: str) -> tuple[int, int, int, str] | None:
+    """Pure parse of one ``pid ppid lstart comm`` line -> ``(pid, ppid, starttime, name)``.
+
+    ``comm`` is the final field and may contain spaces (macOS reports the full
+    executable path), so everything after the fixed-width lstart is the name.
+    """
+    parts = line.split(None, 2 + _PS_LSTART_FIELDS)
+    if len(parts) != 2 + _PS_LSTART_FIELDS + 1:
+        return None
+    try:
+        pid = int(parts[0])
+        ppid = int(parts[1])
+        started = int(time.mktime(time.strptime(" ".join(parts[2:7]), _PS_LSTART_FORMAT)))
+    except (ValueError, OverflowError):
+        return None
+    return pid, ppid, started, parts[7]
+
+
+def _darwin_process_table() -> dict[int, tuple[int, int, str]]:
+    """One ps(1) pass -> ``{pid: (ppid, starttime, name)}``."""
+    out = _run_ps(["ps", "-axo", "pid=,ppid=,lstart=,comm="])
+    table: dict[int, tuple[int, int, str]] = {}
+    for line in (out or "").splitlines():
+        parsed = parse_ps_line(line)
+        if parsed is not None:
+            pid, ppid, started, name = parsed
+            table[pid] = (ppid, started, name)
+    return table
+
+
+def _darwin_process_stat(pid: int) -> tuple[int, int, str] | None:
+    out = _run_ps(["ps", "-p", str(pid), "-o", "pid=,ppid=,lstart=,comm="])
+    for line in (out or "").splitlines():
+        parsed = parse_ps_line(line)
+        if parsed is not None and parsed[0] == pid:
+            return parsed[1], parsed[2], parsed[3]
+    return None
+
+
+# --------------------------------------------------------------------------- #
+# portable process identity
+# --------------------------------------------------------------------------- #
+
+
+def process_stat(pid: int) -> tuple[int, int, str] | None:
+    """``(ppid, starttime, name)`` for ``pid`` from the platform's source."""
+    if sys.platform == "darwin":
+        return _darwin_process_stat(pid)
+    return read_proc_stat(pid)
+
+
 def proc_alive(pid: int, starttime: int) -> bool:
-    st = read_proc_stat(pid)
+    st = process_stat(pid)
     return st is not None and st[1] == starttime
+
+
+def _is_harness_name(name: str) -> bool:
+    # /proc comm is a bare (possibly truncated) name; macOS ps reports the full
+    # executable path. Compare the basename so both spell the harness the same.
+    return Path(name).name in HARNESS_COMMS
 
 
 def find_harness_anchor(start_pid: int | None = None) -> tuple[int, int] | None:
     """Walk the ppid chain upward from ``start_pid`` (default ``os.getpid()``);
-    return ``(pid, starttime)`` of the nearest ancestor whose ``comm`` is a known
+    return ``(pid, starttime)`` of the nearest ancestor whose name is a known
     harness, or ``None``."""
     cur = os.getpid() if start_pid is None else start_pid
+    table = _darwin_process_table() if sys.platform == "darwin" else None
     seen: set[int] = set()
     for _ in range(_MAX_ANCESTRY):
         if cur <= 1 or cur in seen:
             break
         seen.add(cur)
-        st = read_proc_stat(cur)
+        st = table.get(cur) if table is not None else read_proc_stat(cur)
         if st is None:
             break
-        ppid, starttime, comm = st
-        if comm in HARNESS_COMMS:
+        ppid, starttime, name = st
+        if _is_harness_name(name):
             return cur, starttime
         cur = ppid
     return None
@@ -105,12 +189,10 @@ def find_harness_anchor(start_pid: int | None = None) -> tuple[int, int] | None:
 
 def supported() -> bool:
     """True when the platform has the primitives the secure registry needs
-    (POSIX euid ownership + ``AF_UNIX``; Linux in practice).
+    (POSIX euid ownership + ``AF_UNIX``; Linux and macOS in practice).
 
-    A call-time capability check rather than ``sys.platform``: it keeps macOS
-    behavior unchanged (base works; the ``/proc`` anchor probe keeps the bridge
-    inactive) and lets tests exercise the real mechanism by deleting the
-    attributes.
+    A call-time capability check rather than ``sys.platform``: it lets tests
+    exercise the real mechanism by deleting the attributes.
     """
     return hasattr(os, "geteuid") and hasattr(socket, "AF_UNIX")
 
@@ -152,11 +234,18 @@ def runtime_base(explicit: Path | None = None) -> Path | None:
         return base if _ensure_secure_dir(base) else None
     euid = os.geteuid()
     candidates: list[Path] = []
-    run_user = Path(f"/run/user/{euid}")
-    if _verify_secure_dir(run_user):
-        candidates.append(run_user / _DIR_NAME)
-    tmp = Path(os.environ.get("TMPDIR") or "/tmp")
-    candidates.append(tmp / f"{_DIR_NAME}-{euid}")
+    if sys.platform == "darwin":
+        # Deliberately ignore $TMPDIR: macOS points it at per-app launchd dirs,
+        # and the harness spawns the server and the hook with different
+        # environments, so an env-dependent base would put the two sides in
+        # different registries (the same reason $XDG_RUNTIME_DIR is ignored).
+        candidates.append(Path("/tmp") / f"{_DIR_NAME}-{euid}")
+    else:
+        run_user = Path(f"/run/user/{euid}")
+        if _verify_secure_dir(run_user):
+            candidates.append(run_user / _DIR_NAME)
+        tmp = Path(os.environ.get("TMPDIR") or "/tmp")
+        candidates.append(tmp / f"{_DIR_NAME}-{euid}")
     for cand in candidates:
         if _ensure_secure_dir(cand):
             return cand
