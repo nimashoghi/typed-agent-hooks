@@ -91,9 +91,7 @@ _PS_LSTART_FIELDS = 5
 def _run_ps(argv: list[str]) -> str | None:
     env = dict(os.environ, LC_ALL="C")
     try:
-        proc = subprocess.run(
-            argv, capture_output=True, text=True, timeout=5, env=env, check=False
-        )
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=5, env=env, check=False)
     except (OSError, subprocess.SubprocessError):
         return None
     return proc.stdout if proc.returncode == 0 else None
