@@ -41,9 +41,7 @@ def test_claude_only_event_is_not_coerced_into_shared_mode() -> None:
 
 
 def test_claude_failure_maps_to_tool_call_failed() -> None:
-    wire_event = claude_code.parse_input(
-        _payload("claude_code_inputs.json", "PostToolUseFailure")
-    )
+    wire_event = claude_code.parse_input(_payload("claude_code_inputs.json", "PostToolUseFailure"))
 
     event = shared.from_claude_code(wire_event)
 
