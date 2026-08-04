@@ -262,6 +262,14 @@ class HookBridge:
                     try:
                         out = await self._dispatch(payload, req.get("provider"))
                     except Exception:
+                        # A schema or handler failure must stay invisible to the
+                        # harness, but never to the operator: this warning is the
+                        # only trace that events are being dropped.
+                        _log.warning(
+                            "hook dispatch for %s failed",
+                            payload.get("hook_event_name", "<unknown event>"),
+                            exc_info=True,
+                        )
                         ok, out = False, None
                 else:
                     ok = False
