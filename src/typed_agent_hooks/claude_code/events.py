@@ -1,10 +1,10 @@
-"""Strict Claude Code command-hook input schemas."""
+"""Claude Code command-hook input schemas: tolerant readers, strict declared fields."""
 
 from typing import Annotated, Literal, TypeAlias
 
 from pydantic import Field, TypeAdapter, model_validator
 
-from typed_agent_hooks.core import Json, JsonInput, StrictModel, parse_json_object
+from typed_agent_hooks.core import InputModel, Json, JsonInput, parse_json_object
 
 ClaudeEventName: TypeAlias = Literal[
     "SessionStart",
@@ -81,11 +81,11 @@ StopFailureError: TypeAlias = Literal[
 ]
 
 
-class Effort(StrictModel):
+class Effort(InputModel):
     level: EffortLevel
 
 
-class BaseInput(StrictModel):
+class BaseInput(InputModel):
     """Documented common Claude Code command-hook input fields."""
 
     session_id: str
@@ -99,27 +99,27 @@ class BaseInput(StrictModel):
     agent_type: str | None = None
 
 
-class PermissionRule(StrictModel):
+class PermissionRule(InputModel):
     tool_name: str = Field(validation_alias="toolName", serialization_alias="toolName")
     rule_content: str | None = Field(
         default=None, validation_alias="ruleContent", serialization_alias="ruleContent"
     )
 
 
-class RulesPermissionUpdate(StrictModel):
+class RulesPermissionUpdate(InputModel):
     type: Literal["addRules", "replaceRules", "removeRules"]
     rules: list[PermissionRule]
     behavior: Literal["allow", "deny", "ask"]
     destination: Literal["session", "localSettings", "projectSettings", "userSettings"]
 
 
-class SetModePermissionUpdate(StrictModel):
+class SetModePermissionUpdate(InputModel):
     type: Literal["setMode"]
     mode: PermissionMode
     destination: Literal["session", "localSettings", "projectSettings", "userSettings"]
 
 
-class DirectoryPermissionUpdate(StrictModel):
+class DirectoryPermissionUpdate(InputModel):
     type: Literal["addDirectories", "removeDirectories"]
     directories: list[str]
     destination: Literal["session", "localSettings", "projectSettings", "userSettings"]
@@ -131,7 +131,7 @@ PermissionUpdate: TypeAlias = Annotated[
 ]
 
 
-class BackgroundTask(StrictModel):
+class BackgroundTask(InputModel):
     id: str
     type: str
     status: str
@@ -143,14 +143,14 @@ class BackgroundTask(StrictModel):
     name: str | None = None
 
 
-class SessionCron(StrictModel):
+class SessionCron(InputModel):
     id: str
     schedule: str
     recurring: bool
     prompt: str
 
 
-class ToolCall(StrictModel):
+class ToolCall(InputModel):
     tool_name: str
     tool_input: Json
     tool_use_id: str

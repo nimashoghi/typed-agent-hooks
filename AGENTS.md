@@ -8,6 +8,8 @@ Use `uv run ...` for repository commands. The standard checks are:
 - `uv run ty check`
 - `uv run pytest -q`
 
-Keep Codex and Claude Code wire schemas explicit and separate. Shared-mode
-behavior should stay conservative: unsupported provider behavior should fail
-loudly instead of being silently normalized.
+Keep Codex and Claude Code wire schemas explicit and separate. Wire inputs are
+tolerant readers: unknown provider fields are ignored, declared fields stay
+strictly typed. Outputs stay closed and exact. Shared-mode behavior should stay
+conservative: unsupported provider behavior should fail loudly instead of being
+silently normalized.

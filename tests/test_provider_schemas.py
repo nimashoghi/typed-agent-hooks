@@ -39,11 +39,25 @@ def test_all_claude_code_fixture_events_parse_strictly() -> None:
         (claude_code.parse_input, "claude_code_inputs.json"),
     ],
 )
-def test_provider_inputs_reject_unknown_fields(parser, fixture_name: str) -> None:
+def test_provider_inputs_ignore_unknown_fields(parser, fixture_name: str) -> None:
+    # Tolerant readers: a provider adding a payload field must never turn into
+    # a dropped event. Claude Code's prompt_id addition proved forbid fatal.
     payload = _payloads(fixture_name)[0] | {"unexpected": True}
 
-    with pytest.raises(ValidationError, match="unexpected"):
-        parser(payload)
+    parsed = parser(payload)
+
+    assert not hasattr(parsed, "unexpected")
+
+
+def test_provider_inputs_still_reject_declared_field_type_drift() -> None:
+    payload = next(
+        item
+        for item in _payloads("claude_code_inputs.json")
+        if item["hook_event_name"] == "PostToolUse"
+    ) | {"tool_use_id": 7}
+
+    with pytest.raises(ValidationError):
+        claude_code.parse_input(payload)
 
 
 def test_codex_app_rejects_an_output_for_the_wrong_event() -> None:

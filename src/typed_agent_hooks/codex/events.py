@@ -1,10 +1,10 @@
-"""Strict Codex command-hook input schemas."""
+"""Codex command-hook input schemas: tolerant readers, strict declared fields."""
 
 from typing import Annotated, Literal, TypeAlias
 
 from pydantic import Field, TypeAdapter
 
-from typed_agent_hooks.core import Json, JsonInput, StrictModel, parse_json_object
+from typed_agent_hooks.core import InputModel, Json, JsonInput, parse_json_object
 
 CodexEventName: TypeAlias = Literal[
     "SessionStart",
@@ -25,7 +25,7 @@ StartSource: TypeAlias = Literal["startup", "resume", "clear", "compact"]
 CompactTrigger: TypeAlias = Literal["manual", "auto"]
 
 
-class BaseInput(StrictModel):
+class BaseInput(InputModel):
     """Fields present on every Codex command-hook input."""
 
     session_id: str

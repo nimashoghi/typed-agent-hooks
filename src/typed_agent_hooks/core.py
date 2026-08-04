@@ -20,6 +20,24 @@ class StrictModel(BaseModel):
     )
 
 
+class InputModel(BaseModel):
+    """Tolerant-reader wire input: strict declared fields, unknown keys ignored.
+
+    Providers add payload fields at will, and an unknown key must never turn
+    into a dropped event: Claude Code's `prompt_id` addition silently killed
+    every tool event while schemas forbade extras. Declared fields stay
+    strictly typed, so drift on a known field still fails loudly. Outputs
+    remain `StrictModel`: we author those, and they must be exact.
+    """
+
+    model_config = ConfigDict(
+        extra="ignore",
+        strict=True,
+        populate_by_name=True,
+        frozen=True,
+    )
+
+
 class Provider(str, Enum):
     """Supported hook providers."""
 
