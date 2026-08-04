@@ -33,6 +33,10 @@ class BaseInput(InputModel):
     cwd: str
     hook_event_name: CodexEventName
     model: str
+    # Present on events fired from a subagent's context (observed live on
+    # PreToolUse/PostToolUse in collaboration mode); absent on the main thread.
+    agent_id: str | None = None
+    agent_type: str | None = None
 
 
 class SessionStartInput(BaseInput):

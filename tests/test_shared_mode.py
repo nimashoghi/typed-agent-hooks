@@ -40,6 +40,20 @@ def test_claude_only_event_is_not_coerced_into_shared_mode() -> None:
         shared.from_claude_code(wire_event)
 
 
+def test_agent_identity_reaches_shared_context() -> None:
+    codex_event = shared.from_codex(codex.parse_input(_payload("codex_inputs.json", "PostToolUse")))
+    claude_event = shared.from_claude_code(
+        claude_code.parse_input(_payload("claude_code_inputs.json", "PostToolUse"))
+    )
+
+    # The codex fixture models a subagent-scoped tool event; the Claude one is
+    # a main-thread event, which carries no agent identity.
+    assert codex_event.context.agent_id == "a"
+    assert codex_event.context.agent_type == "explore"
+    assert claude_event.context.agent_id is None
+    assert claude_event.context.agent_type is None
+
+
 def test_claude_failure_maps_to_tool_call_failed() -> None:
     wire_event = claude_code.parse_input(_payload("claude_code_inputs.json", "PostToolUseFailure"))
 

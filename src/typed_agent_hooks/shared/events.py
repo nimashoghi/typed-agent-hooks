@@ -34,6 +34,10 @@ class EventContext(StrictModel):
     cwd: str
     model: str | None = None
     permission_mode: PermissionMode | None = None
+    # Set when the event fired from a subagent's context; None on the main
+    # thread. Both providers stamp these on subagent-scoped tool events.
+    agent_id: str | None = None
+    agent_type: str | None = None
 
 
 class BaseEvent(StrictModel):

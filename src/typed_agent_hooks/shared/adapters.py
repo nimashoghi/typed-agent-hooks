@@ -49,6 +49,8 @@ def _codex_context(event: codex.events.AnyInput) -> EventContext:
         cwd=event.cwd,
         model=event.model,
         permission_mode=permission_mode,
+        agent_id=event.agent_id,
+        agent_type=event.agent_type,
     )
 
 
@@ -62,6 +64,8 @@ def _claude_context(event: claude_code.events.AnyInput) -> EventContext:
         cwd=event.cwd,
         model=model,
         permission_mode=event.permission_mode,
+        agent_id=event.agent_id,
+        agent_type=event.agent_type,
     )
 
 
