@@ -92,6 +92,7 @@ class BaseInput(StrictModel):
     transcript_path: str
     cwd: str
     hook_event_name: ClaudeEventName
+    prompt_id: str | None = None
     permission_mode: PermissionMode | None = None
     effort: Effort | None = None
     agent_id: str | None = None
