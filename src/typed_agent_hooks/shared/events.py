@@ -12,6 +12,7 @@ SharedEventName: TypeAlias = Literal[
     "ToolCallProposed",
     "PermissionRequested",
     "ToolCallCompleted",
+    "ToolCallFailed",
     "CompactionStarting",
     "CompactionFinished",
     "SubagentStarted",
@@ -78,6 +79,25 @@ class ToolCallCompleted(BaseEvent):
     duration_ms: int | None = Field(default=None, ge=0)
 
 
+class ToolCallFailed(BaseEvent):
+    """A tool call that ended in failure rather than a result.
+
+    Claude Code only: it routes a failing call to `PostToolUseFailure` instead
+    of `PostToolUse`, so a completed call implies success there. Codex has no
+    failure primitive and reports failures inside ordinary `ToolCallCompleted`
+    responses, so it never emits this event.
+    """
+
+    event_name: Literal["ToolCallFailed"] = "ToolCallFailed"
+    turn_id: str | None = None
+    tool_name: str
+    tool_input: Json
+    tool_use_id: str
+    error: str
+    is_interrupt: bool | None = None
+    duration_ms: int | None = Field(default=None, ge=0)
+
+
 class CompactionStarting(BaseEvent):
     event_name: Literal["CompactionStarting"] = "CompactionStarting"
     turn_id: str | None = None
@@ -122,6 +142,7 @@ AnyEvent: TypeAlias = Annotated[
     | ToolCallProposed
     | PermissionRequested
     | ToolCallCompleted
+    | ToolCallFailed
     | CompactionStarting
     | CompactionFinished
     | SubagentStarted
@@ -137,6 +158,7 @@ EVENT_NAMES: tuple[SharedEventName, ...] = (
     "ToolCallProposed",
     "PermissionRequested",
     "ToolCallCompleted",
+    "ToolCallFailed",
     "CompactionStarting",
     "CompactionFinished",
     "SubagentStarted",
@@ -150,6 +172,7 @@ EVENT_NAME_BY_TYPE: dict[type[BaseEvent], SharedEventName] = {
     ToolCallProposed: "ToolCallProposed",
     PermissionRequested: "PermissionRequested",
     ToolCallCompleted: "ToolCallCompleted",
+    ToolCallFailed: "ToolCallFailed",
     CompactionStarting: "CompactionStarting",
     CompactionFinished: "CompactionFinished",
     SubagentStarted: "SubagentStarted",

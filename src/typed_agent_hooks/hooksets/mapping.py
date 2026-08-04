@@ -23,6 +23,7 @@ SHARED_TO_CLAUDE_CODE: Mapping[SharedEventName, claude_code.events.ClaudeEventNa
     "ToolCallProposed": "PreToolUse",
     "PermissionRequested": "PermissionRequest",
     "ToolCallCompleted": "PostToolUse",
+    "ToolCallFailed": "PostToolUseFailure",
     "CompactionStarting": "PreCompact",
     "CompactionFinished": "PostCompact",
     "SubagentStarted": "SubagentStart",

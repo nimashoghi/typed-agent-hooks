@@ -14,6 +14,7 @@ from .events import (
     SubagentStarted,
     SubagentStopped,
     ToolCallCompleted,
+    ToolCallFailed,
     ToolCallProposed,
     TurnStopped,
 )
@@ -159,6 +160,16 @@ def try_from_claude_code(event: claude_code.events.AnyInput) -> AnyEvent | None:
                 tool_input=event.tool_input,
                 tool_response=event.tool_response,
                 tool_use_id=event.tool_use_id,
+                duration_ms=event.duration_ms,
+            )
+        case claude_code.events.PostToolUseFailureInput():
+            return ToolCallFailed(
+                context=context,
+                tool_name=event.tool_name,
+                tool_input=event.tool_input,
+                tool_use_id=event.tool_use_id,
+                error=event.error,
+                is_interrupt=event.is_interrupt,
                 duration_ms=event.duration_ms,
             )
         case claude_code.events.PreCompactInput():

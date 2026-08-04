@@ -25,7 +25,11 @@ def test_codex_events_have_total_shared_mappings() -> None:
         shared.from_codex(codex.parse_input(payload)) for payload in _payloads("codex_inputs.json")
     ]
 
-    assert {event.event_name for event in events} == set(shared.events.EVENT_NAMES)
+    # ToolCallFailed is Claude Code-only: Codex has no failure primitive and
+    # reports failures inside ordinary PostToolUse responses.
+    assert {event.event_name for event in events} == set(shared.events.EVENT_NAMES) - {
+        "ToolCallFailed"
+    }
 
 
 def test_claude_only_event_is_not_coerced_into_shared_mode() -> None:
@@ -34,6 +38,20 @@ def test_claude_only_event_is_not_coerced_into_shared_mode() -> None:
     assert shared.try_from_claude_code(wire_event) is None
     with pytest.raises(shared.NoSharedMappingError, match="no shared semantic mapping"):
         shared.from_claude_code(wire_event)
+
+
+def test_claude_failure_maps_to_tool_call_failed() -> None:
+    wire_event = claude_code.parse_input(
+        _payload("claude_code_inputs.json", "PostToolUseFailure")
+    )
+
+    event = shared.from_claude_code(wire_event)
+
+    assert isinstance(event, shared.events.ToolCallFailed)
+    assert event.tool_name == "Bash"
+    assert event.error == "Exit code 1\nfailed"
+    assert event.is_interrupt is False
+    assert event.duration_ms == 18
 
 
 def test_shared_output_intent_is_checked_against_the_semantic_event() -> None:

@@ -136,7 +136,15 @@ def _compile_codex(
     else:
         for shared_spec in hookset.hooks:
             options = shared_spec.codex
-            event = SHARED_TO_CODEX[shared_spec.event]
+            mapped = SHARED_TO_CODEX.get(shared_spec.event)
+            if mapped is None:
+                # E.g. ToolCallFailed: Claude Code-only. Loud beats a KeyError
+                # and beats silently thinning the hookset for one provider.
+                raise ValueError(
+                    f"shared event {shared_spec.event!r} has no Codex equivalent; "
+                    "use a provider-specific hookset for it"
+                )
+            event = mapped
             handler = codex.config.CommandHook(
                 command=command,
                 timeout=(options.timeout if options.timeout is not None else shared_spec.timeout),

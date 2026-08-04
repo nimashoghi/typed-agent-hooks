@@ -15,7 +15,7 @@ There is no provider auto-detection and no implicit normalization. You choose th
 ## Design principles
 
 - Provider wire schemas remain authoritative and separate.
-- All Pydantic models use strict validation and reject unknown fields.
+- Wire inputs are tolerant readers: unknown provider fields are ignored, declared fields stay strictly typed. Outputs are closed models that reject unknown fields.
 - Python attributes use `snake_case`; provider JSON aliases are emitted at the wire boundary.
 - Handler registration uses concrete event model classes, not untyped strings.
 - A handler may return only the exact output model for its event.
@@ -116,13 +116,14 @@ Shared mode maps a conservative semantic event set from both providers:
 | `ToolCallProposed` | `PreToolUse` | `PreToolUse` |
 | `PermissionRequested` | `PermissionRequest` | `PermissionRequest` |
 | `ToolCallCompleted` | `PostToolUse` | `PostToolUse` |
+| `ToolCallFailed` | (not emitted) | `PostToolUseFailure` |
 | `CompactionStarting` | `PreCompact` | `PreCompact` |
 | `CompactionFinished` | `PostCompact` | `PostCompact` |
 | `SubagentStarted` | `SubagentStart` | `SubagentStart` |
 | `SubagentStopped` | `SubagentStop` | `SubagentStop` |
 | `TurnStopped` | `Stop` | `Stop` |
 
-Claude-only events do not get coerced into this layer. `shared.try_from_claude_code(...)` returns `None`; `shared.from_claude_code(...)` raises `NoSharedMappingError`.
+Claude-only events do not get coerced into this layer. `shared.try_from_claude_code(...)` returns `None`; `shared.from_claude_code(...)` raises `NoSharedMappingError`. `ToolCallFailed` is the one asymmetric member: Claude Code routes failing calls to `PostToolUseFailure` (so its `ToolCallCompleted` implies success), while Codex reports failures inside ordinary `ToolCallCompleted` responses and never emits it.
 
 ```python
 from typed_agent_hooks import shared
@@ -398,16 +399,7 @@ The rendezvous was verified live on Codex (`_meta.threadId` reaches the middlewa
 
 ## Strictness boundary
 
-Outer event and output envelopes are closed Pydantic models:
-
-```python
-ConfigDict(
-    extra="forbid",
-    strict=True,
-    populate_by_name=True,
-    frozen=True,
-)
-```
+Output envelopes are closed Pydantic models (`extra="forbid"`): this package authors them, and they must be exact. Wire input envelopes are tolerant readers (`extra="ignore"`): providers add payload fields at will, and an unknown key must never turn into a dropped event, while declared fields keep `strict=True` so drift on a known field still fails loudly.
 
 `tool_input`, `tool_response`, and other provider-defined arbitrary JSON values remain `JsonValue`. They cannot honestly share one closed global schema because their shapes depend on the concrete built-in or MCP tool.
 
