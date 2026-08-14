@@ -1,5 +1,6 @@
 """Hookset-facing operations used by the command-line interface."""
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from typed_agent_hooks.hooksets import (
@@ -35,6 +36,7 @@ def render(
     *,
     provider: ProviderSelection = "all",
     python_executable: str | None = None,
+    command_prefix: Sequence[str] | None = None,
 ) -> dict[str, dict[str, object]]:
     """Compile a hookset into provider-native JSON dictionaries."""
 
@@ -45,6 +47,7 @@ def render(
         provider=provider,
         base_dir=hookset_path.parent,
         python_executable=python_executable,
+        command_prefix=command_prefix,
     )
     return {name: config_dict(config) for name, config in configs.items()}
 
@@ -57,6 +60,7 @@ def install(
     project_root: str | Path = ".",
     target_path: str | Path | None = None,
     python_executable: str | None = None,
+    command_prefix: Sequence[str] | None = None,
 ) -> dict[str, ConfigChange]:
     """Check, compile, and idempotently install a hookset."""
 
@@ -66,12 +70,14 @@ def install(
         hookset,
         base_dir=hookset_path.parent,
         python_executable=python_executable,
+        command_prefix=command_prefix,
     )
     configs = compile_hooksets(
         hookset,
         provider=provider,
         base_dir=hookset_path.parent,
         python_executable=python_executable,
+        command_prefix=command_prefix,
     )
     if target_path is not None and len(configs) != 1:
         raise ValueError("an explicit target path requires exactly one provider")

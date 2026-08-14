@@ -114,6 +114,30 @@ def test_is_own_identity_event():
     assert shim._is_own_identity_event("claude_code", own) is False
 
 
+def test_forward_cli_accepts_explicit_timeouts() -> None:
+    parser = argparse.ArgumentParser()
+    shim.add_forward_arguments(parser)
+
+    args = parser.parse_args(
+        [
+            "--provider",
+            "codex",
+            "--startup-wait",
+            "5",
+            "--response-timeout",
+            "31",
+        ]
+    )
+
+    assert args.startup_wait == 5
+    assert args.response_timeout == 31
+
+
+def test_explicit_startup_wait_overrides_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TAH_FORWARD_STARTUP_WAIT_S", "60")
+    assert shim._startup_wait_seconds(5) == 5
+
+
 # ---- _forward against a real fake socket ----
 
 

@@ -2,12 +2,14 @@
 
 import shlex
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal, TypeAlias, cast
 
 from typed_agent_hooks import claude_code, codex
 from typed_agent_hooks.loader import split_object_spec
 
+from .launcher import default_command_prefix
 from .mapping import SHARED_TO_CLAUDE_CODE, SHARED_TO_CODEX
 from .models import (
     ClaudeCodeHookSet,
@@ -63,7 +65,7 @@ def _runner_args(
     hookset_name: str,
 ) -> list[str]:
     cli_mode = mode.replace("_", "-")
-    args = ["-m", "typed_agent_hooks", "run", cli_mode, app_spec]
+    args = [cli_mode, app_spec]
     if mode == "shared":
         args.extend(["--provider", provider.replace("_", "-")])
     args.extend(["--hookset-name", hookset_name])
@@ -81,42 +83,36 @@ def _forward_args(provider: ProviderName, server: str, hookset_name: str) -> lis
     ]
 
 
-def _default_forward_launcher(python_executable: str) -> list[str]:
-    """The plain ``<python> -m typed_agent_hooks forward`` launcher prefix."""
-
-    return [python_executable, "-m", "typed_agent_hooks", "forward"]
-
-
 def _codex_command(
     *,
-    python_executable: str,
+    command_prefix: Sequence[str],
     mode: str,
     app_spec: str,
     hookset_name: str,
 ) -> str:
     args = _runner_args(mode, "codex", app_spec, hookset_name)
-    return shlex.join([python_executable, *args])
+    return shlex.join([*command_prefix, *args])
 
 
 def _claude_command(
     *,
-    python_executable: str,
+    command_prefix: Sequence[str],
     mode: str,
     app_spec: str,
     hookset_name: str,
 ) -> tuple[str, list[str]]:
     args = _runner_args(mode, "claude_code", app_spec, hookset_name)
-    return python_executable, args
+    return command_prefix[0], [*command_prefix[1:], *args]
 
 
 def _compile_codex(
     hookset: CodexHookSet | SharedHookSet,
     *,
     app_spec: str,
-    python_executable: str,
+    command_prefix: Sequence[str],
 ) -> codex.config.HooksFile:
     command = _codex_command(
-        python_executable=python_executable,
+        command_prefix=command_prefix,
         mode=hookset.mode,
         app_spec=app_spec,
         hookset_name=hookset.name,
@@ -165,10 +161,10 @@ def _compile_claude_code(
     hookset: ClaudeCodeHookSet | SharedHookSet,
     *,
     app_spec: str,
-    python_executable: str,
+    command_prefix: Sequence[str],
 ) -> claude_code.config.SettingsHooks:
     command, args = _claude_command(
-        python_executable=python_executable,
+        command_prefix=command_prefix,
         mode=hookset.mode,
         app_spec=app_spec,
         hookset_name=hookset.name,
@@ -217,13 +213,11 @@ def _compile_fastmcp(
     hookset: FastmcpHookSet,
     *,
     provider: ProviderName,
-    python_executable: str,
-    forward_command: list[str] | None = None,
+    command_prefix: Sequence[str],
 ) -> CompiledConfig:
-    launcher = forward_command or _default_forward_launcher(python_executable)
     fwd = _forward_args(provider, hookset.server, hookset.name)
     if provider == "codex":
-        command = shlex.join([*launcher, *fwd])
+        command = shlex.join([*command_prefix, *fwd])
         codex_hooks: dict[codex.events.CodexEventName, list[codex.config.HookGroup]] = {}
         for spec in hookset.hooks:
             handler = codex.config.CommandHook(
@@ -236,7 +230,7 @@ def _compile_fastmcp(
             codex_hooks.setdefault(cast(codex.events.CodexEventName, spec.event), []).append(group)
         return codex.config.HooksFile(hooks=codex_hooks)
 
-    exe, exe_args = launcher[0], [*launcher[1:], *fwd]
+    exe, exe_args = command_prefix[0], [*command_prefix[1:], *fwd]
     claude_hooks: dict[claude_code.events.ClaudeEventName, list[claude_code.config.HookGroup]] = {}
     for spec in hookset.hooks:
         handler = claude_code.config.CommandHook(
@@ -262,34 +256,44 @@ def compile_hookset(
     provider: ProviderName,
     base_dir: str | Path = ".",
     python_executable: str | None = None,
-    forward_command: list[str] | None = None,
+    command_prefix: Sequence[str] | None = None,
 ) -> CompiledConfig:
     """Compile one hookset for one explicit provider.
 
-    For FastMCP forwarding hooksets, ``forward_command`` overrides the launcher
-    prefix (default ``<python_executable> -m typed_agent_hooks forward``); e.g.
-    pass :func:`uvx_forward_command` for a self-bootstrapping ``uvx`` command
-    that survives ephemeral interpreters. It is ignored for other hookset modes.
+    ``command_prefix`` is the complete executable prefix before hook-specific
+    arguments. When omitted, an explicit ``python_executable`` is honored;
+    otherwise Git installations self-bootstrap through uvx so generated config
+    never points into an ephemeral installer environment.
     """
 
     target_providers(hookset, provider)
     executable = python_executable or sys.executable
+    prefix = (
+        list(command_prefix)
+        if command_prefix is not None
+        else default_command_prefix(
+            hookset.mode,
+            python_executable=executable,
+            self_bootstrap=python_executable is None,
+        )
+    )
+    if not prefix:
+        raise ValueError("command_prefix must contain at least one argument")
     if isinstance(hookset, FastmcpHookSet):
         return _compile_fastmcp(
             hookset,
             provider=provider,
-            python_executable=executable,
-            forward_command=forward_command,
+            command_prefix=prefix,
         )
     app_spec = resolve_app_spec(hookset.app, base_dir=base_dir)
 
     if provider == "codex":
         if isinstance(hookset, ClaudeCodeHookSet):
             raise AssertionError("provider compatibility check failed")
-        return _compile_codex(hookset, app_spec=app_spec, python_executable=executable)
+        return _compile_codex(hookset, app_spec=app_spec, command_prefix=prefix)
     if isinstance(hookset, CodexHookSet):
         raise AssertionError("provider compatibility check failed")
-    return _compile_claude_code(hookset, app_spec=app_spec, python_executable=executable)
+    return _compile_claude_code(hookset, app_spec=app_spec, command_prefix=prefix)
 
 
 def compile_hooksets(
@@ -298,7 +302,7 @@ def compile_hooksets(
     provider: ProviderSelection = "all",
     base_dir: str | Path = ".",
     python_executable: str | None = None,
-    forward_command: list[str] | None = None,
+    command_prefix: Sequence[str] | None = None,
 ) -> dict[ProviderName, CompiledConfig]:
     """Compile a hookset for every selected provider."""
 
@@ -308,7 +312,7 @@ def compile_hooksets(
             provider=target,
             base_dir=base_dir,
             python_executable=python_executable,
-            forward_command=forward_command,
+            command_prefix=command_prefix,
         )
         for target in target_providers(hookset, provider)
     }

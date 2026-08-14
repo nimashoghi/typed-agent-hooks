@@ -9,7 +9,6 @@ from .compiler import (
     resolve_app_spec,
     target_providers,
 )
-from .forward import self_install_spec, uvx_forward_command
 from .install import (
     ConfigChange,
     Scope,
@@ -20,6 +19,7 @@ from .install import (
     read_json_object,
     uninstall_config,
 )
+from .launcher import default_command_prefix, self_install_spec
 from .models import (
     ClaudeCodeHookSet,
     ClaudeCodeHookSpec,
@@ -56,6 +56,7 @@ __all__ = [
     "compile_hooksets",
     "config_dict",
     "default_config_path",
+    "default_command_prefix",
     "install_config",
     "merge_managed_config",
     "parse_hookset",
@@ -65,5 +66,4 @@ __all__ = [
     "self_install_spec",
     "target_providers",
     "uninstall_config",
-    "uvx_forward_command",
 ]

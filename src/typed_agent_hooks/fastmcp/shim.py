@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import math
 import os
 import sys
 import time
@@ -38,7 +39,7 @@ _OWN_IDENTITY_EVENTS = frozenset({"SubagentStart", "SubagentStop"})
 
 _CONNECT_RETRIES = 5
 _CONNECT_RETRY_SLEEP = 0.05  # listener-start race window
-_FORWARD_TIMEOUT = 2.0
+_DEFAULT_RESPONSE_TIMEOUT = 2.0
 _MAX_RESOLVE_ATTEMPTS = 2  # re-resolve once after pruning a stale descriptor
 
 # Events fired at session/subagent start, when the server (and its bridge) may
@@ -49,6 +50,20 @@ _STARTUP_EVENTS = frozenset({"SessionStart", "SubagentStart"})
 _STARTUP_WAIT_ENV = "TAH_FORWARD_STARTUP_WAIT_S"
 _STARTUP_WAIT_S = 60.0  # override via $TAH_FORWARD_STARTUP_WAIT_S (0 disables)
 _STARTUP_POLL_SLEEP = 0.1
+
+
+def _nonnegative_seconds(value: str) -> float:
+    seconds = float(value)
+    if not math.isfinite(seconds) or seconds < 0:
+        raise argparse.ArgumentTypeError("must be finite and non-negative")
+    return seconds
+
+
+def _positive_seconds(value: str) -> float:
+    seconds = float(value)
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise argparse.ArgumentTypeError("must be finite and positive")
+    return seconds
 
 
 class _Forward(NamedTuple):
@@ -64,6 +79,18 @@ def add_forward_arguments(parser: argparse.ArgumentParser) -> None:
     # not used for routing.
     parser.add_argument("--hookset-name", dest="hookset_name", default=None)
     parser.add_argument("--registry-root", dest="registry_root", default=None)
+    parser.add_argument(
+        "--startup-wait",
+        type=_nonnegative_seconds,
+        default=None,
+        help="seconds to wait for a bridge on startup events (environment/default if omitted)",
+    )
+    parser.add_argument(
+        "--response-timeout",
+        type=_positive_seconds,
+        default=_DEFAULT_RESPONSE_TIMEOUT,
+        help="seconds to wait for the bridge response",
+    )
 
 
 def run_from_args(args: argparse.Namespace) -> int:
@@ -102,7 +129,9 @@ def _live_descriptors(adir: Path, server_name: str) -> list[dict]:
     ]
 
 
-def _startup_wait_seconds() -> float:
+def _startup_wait_seconds(explicit: float | None = None) -> float:
+    if explicit is not None:
+        return explicit
     raw = os.environ.get(_STARTUP_WAIT_ENV)
     if raw is None:
         return _STARTUP_WAIT_S
@@ -112,7 +141,12 @@ def _startup_wait_seconds() -> float:
         return _STARTUP_WAIT_S
 
 
-def _await_startup_descriptor(adir: Path, server_name: str) -> None:
+def _await_startup_descriptor(
+    adir: Path,
+    server_name: str,
+    *,
+    wait_seconds: float | None = None,
+) -> None:
     """On a session/subagent-start event, briefly wait for the server's descriptor.
 
     The server (and its bridge) may still be launching when the harness fires the
@@ -122,7 +156,7 @@ def _await_startup_descriptor(adir: Path, server_name: str) -> None:
     descriptor appears.
     """
 
-    wait = _startup_wait_seconds()
+    wait = _startup_wait_seconds(wait_seconds)
     if wait <= 0.0 or _live_descriptors(adir, server_name):
         return
     deadline = time.monotonic() + wait
@@ -158,7 +192,14 @@ def _resolve(descs: list[dict], key: str | None) -> dict | None:
     return None
 
 
-def _forward(desc: dict, *, key: str, provider: str, payload: dict) -> _Forward:
+def _forward(
+    desc: dict,
+    *,
+    key: str,
+    provider: str,
+    payload: dict,
+    response_timeout: float = _DEFAULT_RESPONSE_TIMEOUT,
+) -> _Forward:
     sock_path = desc.get("socket_path")
     nonce = desc.get("server_nonce")
     if not isinstance(sock_path, str) or not isinstance(nonce, str):
@@ -166,7 +207,7 @@ def _forward(desc: dict, *, key: str, provider: str, payload: dict) -> _Forward:
 
     sock = None
     for _ in range(_CONNECT_RETRIES):
-        sock = rz.connect_unix(sock_path, timeout=_FORWARD_TIMEOUT)
+        sock = rz.connect_unix(sock_path, timeout=response_timeout)
         if sock is not None:
             break
         time.sleep(_CONNECT_RETRY_SLEEP)
@@ -214,7 +255,11 @@ def _run(args: argparse.Namespace) -> None:
     adir = rz.anchor_dir(base, anchor)
 
     if event.get("hook_event_name") in _STARTUP_EVENTS:
-        _await_startup_descriptor(adir, args.server_name)
+        _await_startup_descriptor(
+            adir,
+            args.server_name,
+            wait_seconds=getattr(args, "startup_wait", None),
+        )
 
     for _ in range(_MAX_RESOLVE_ATTEMPTS):
         descs = _live_descriptors(adir, args.server_name)
@@ -222,7 +267,17 @@ def _run(args: argparse.Namespace) -> None:
             return
         target = _resolve(descs, key)
         if target is not None:
-            result = _forward(target, key=key or "", provider=provider, payload=event)
+            result = _forward(
+                target,
+                key=key or "",
+                provider=provider,
+                payload=event,
+                response_timeout=getattr(
+                    args,
+                    "response_timeout",
+                    _DEFAULT_RESPONSE_TIMEOUT,
+                ),
+            )
             if result.connected:
                 if result.out is not None:
                     sys.stdout.write(result.out)

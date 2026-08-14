@@ -1,5 +1,6 @@
 """Hookset validation that intentionally imports and inspects the hook app."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,6 +27,7 @@ def check_hookset(
     *,
     base_dir: str | Path = ".",
     python_executable: str | None = None,
+    command_prefix: Sequence[str] | None = None,
 ) -> CheckReport:
     """Compile the hookset, import its app, and verify required handlers exist."""
 
@@ -33,6 +35,7 @@ def check_hookset(
         hookset,
         base_dir=base_dir,
         python_executable=python_executable,
+        command_prefix=command_prefix,
     )
 
     if isinstance(hookset, FastmcpHookSet):

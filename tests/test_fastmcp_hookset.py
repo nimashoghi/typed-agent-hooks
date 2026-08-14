@@ -90,8 +90,8 @@ def test_compile_claude_emits_forward_command():
 _UVX = ["uvx", "--from", "git+https://github.com/o/r@deadbeef", "tah-fastmcp-forward"]
 
 
-def test_compile_codex_uses_forward_command_launcher():
-    configs = compile_hooksets(parse_hookset(CODEX_TOML), forward_command=_UVX)
+def test_compile_codex_uses_command_prefix():
+    configs = compile_hooksets(parse_hookset(CODEX_TOML), command_prefix=_UVX)
     cmd = configs["codex"].hooks["PreToolUse"][0].hooks[0].command
     assert cmd == (
         "uvx --from git+https://github.com/o/r@deadbeef tah-fastmcp-forward "
@@ -100,8 +100,8 @@ def test_compile_codex_uses_forward_command_launcher():
     assert "typed_agent_hooks" not in cmd  # no baked -m launcher; uvx resolves it
 
 
-def test_compile_claude_uses_forward_command_launcher():
-    configs = compile_hooksets(parse_hookset(CLAUDE_TOML), forward_command=_UVX)
+def test_compile_claude_uses_command_prefix():
+    configs = compile_hooksets(parse_hookset(CLAUDE_TOML), command_prefix=_UVX)
     cfg = configs["claude_code"]
     assert isinstance(cfg, claude_code.config.SettingsHooks)
     handler = cfg.hooks["PreToolUse"][0].hooks[0]
