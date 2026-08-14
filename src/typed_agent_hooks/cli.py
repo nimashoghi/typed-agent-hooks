@@ -276,7 +276,9 @@ def main(argv: list[str] | None = None) -> int:
     ) as exc:
         if args.debug:
             raise
-        log.error("%s", exc)
+        hookset_name = getattr(args, "hookset_name", None)
+        prefix = f"hookset {hookset_name!r}: " if hookset_name is not None else ""
+        log.error("%s%s", prefix, exc)
         return 1
 
 

@@ -152,6 +152,49 @@ def test_full_shared_hookset_lifecycle_is_idempotent(tmp_path: Path) -> None:
     assert remaining_claude == {"permissions": {"allow": ["Bash"]}}
 
 
+def test_run_error_identifies_managed_hookset(tmp_path: Path) -> None:
+    app = tmp_path / "hooks.py"
+    app.write_text(
+        "from typed_agent_hooks import shared\n"
+        "\n"
+        "app = shared.HookApp()\n"
+        "\n"
+        "@app.on(shared.events.CompactionFinished)\n"
+        "def compacted(event):\n"
+        "    return shared.outputs.AddContext(text='context')\n",
+        encoding="utf-8",
+    )
+    payload = {
+        "session_id": "session-1",
+        "transcript_path": None,
+        "cwd": str(tmp_path),
+        "hook_event_name": "PostCompact",
+        "model": "gpt-5",
+        "turn_id": "turn-1",
+        "trigger": "manual",
+    }
+
+    result = _run_cli(
+        tmp_path,
+        "run",
+        "shared",
+        f"{app}:app",
+        "--provider",
+        "codex",
+        "--hookset-name",
+        "sources",
+        stdin=json.dumps(payload),
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.startswith(
+        "ERROR: hookset 'sources': AddContext is not portable for "
+        "CompactionFinished (codex PostCompact);"
+    )
+    assert "SessionStarted(source='compact') instead" in result.stderr
+
+
 def test_shared_hookset_rejects_options_for_a_disabled_provider() -> None:
     text = """
 name = "policy"

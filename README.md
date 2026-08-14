@@ -180,6 +180,8 @@ Stop
 
 The translator validates each intent against the semantic event and target provider before rendering output.
 
+`CompactionFinished` is a lifecycle notification, not a model-context injection point. To re-ground a compacted session, return `AddContext` from `SessionStarted(source="compact")`. Returning it from `CompactionFinished` fails with an actionable `SharedOutputError` instead of degrading the context into a user-only warning.
+
 ## Describe the installed hookset
 
 `hookset.toml` is the source of truth for registration and installation:

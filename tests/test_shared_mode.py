@@ -77,6 +77,24 @@ def test_shared_output_intent_is_checked_against_the_semantic_event() -> None:
         )
 
 
+def test_compaction_context_error_points_to_context_capable_boundary() -> None:
+    wire_event = codex.parse_input(_payload("codex_inputs.json", "PostCompact"))
+    event = shared.from_codex(wire_event)
+
+    with pytest.raises(SharedOutputError) as raised:
+        shared.outputs.to_codex_output(
+            event,
+            shared.outputs.AddContext(text="Re-ground the compacted session."),
+        )
+
+    assert str(raised.value) == (
+        "AddContext is not portable for CompactionFinished (codex PostCompact); "
+        "valid events: PromptSubmitted, SessionStarted, SubagentStarted, "
+        "ToolCallCompleted, ToolCallProposed. Return post-compaction context from "
+        "SessionStarted(source='compact') instead"
+    )
+
+
 def test_shared_app_requires_explicit_provider_at_runtime() -> None:
     app = shared.HookApp()
 

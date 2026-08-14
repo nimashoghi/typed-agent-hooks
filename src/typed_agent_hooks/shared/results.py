@@ -124,4 +124,14 @@ def require_event(event: AnyEvent, allowed: frozenset[SharedEventName], output: 
     """Require that an output intent is portable for a shared event."""
 
     if event.event_name not in allowed:
-        raise SharedOutputError(f"{type(output).__name__} is not portable for {event.event_name}")
+        valid_events = ", ".join(sorted(allowed))
+        message = (
+            f"{type(output).__name__} is not portable for {event.event_name} "
+            f"({event.context.provider.value} {event.context.source_event}); "
+            f"valid events: {valid_events}"
+        )
+        if isinstance(output, AddContext) and event.event_name == "CompactionFinished":
+            message += (
+                ". Return post-compaction context from SessionStarted(source='compact') instead"
+            )
+        raise SharedOutputError(message)
