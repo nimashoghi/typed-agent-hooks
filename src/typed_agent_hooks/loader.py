@@ -43,7 +43,11 @@ def _load_file(path: Path) -> object:
 
     digest = hashlib.sha256(str(path).encode()).hexdigest()[:16]
     module_name = f"_typed_agent_hooks_user_{digest}"
-    module_spec = importlib.util.spec_from_file_location(module_name, path)
+    module_spec = importlib.util.spec_from_file_location(
+        module_name,
+        path,
+        submodule_search_locations=[str(path.parent)] if path.name == "__init__.py" else None,
+    )
     if module_spec is None or module_spec.loader is None:
         raise ImportError(f"could not load Python module from {path}")
 

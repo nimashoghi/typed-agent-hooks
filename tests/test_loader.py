@@ -41,3 +41,12 @@ def test_load_object_from_file(tmp_path):
     (tmp_path / "app.py").write_text("app = 'LOADED'\n", encoding="utf-8")
     assert load_object("app.py:app", base_dir=tmp_path) == "LOADED"
     assert load_object(f"{tmp_path / 'app.py'}:app") == "LOADED"
+
+
+def test_load_object_from_package_init_supports_relative_imports(tmp_path):
+    package = tmp_path / "hook_package"
+    package.mkdir()
+    (package / "helper.py").write_text('VALUE = "PACKAGE"\n')
+    (package / "__init__.py").write_text("from .helper import VALUE\n\napp = VALUE\n")
+
+    assert load_object("hook_package/__init__.py:app", base_dir=tmp_path) == "PACKAGE"

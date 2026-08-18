@@ -210,6 +210,12 @@ matcher = "Bash"
 if = "Bash(*)"
 ```
 
+For a multi-file local application, point `app` at a package initializer. Relative imports inside the package work normally:
+
+```toml
+app = "wiki_hints/__init__.py:app"
+```
+
 Shared defaults and provider-only overrides are distinct. Invalid combinations, such as Claude options when Claude Code is disabled, are rejected while parsing the hookset.
 
 Provider-specific hooksets use provider-native event names and fields:
