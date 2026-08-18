@@ -4,6 +4,7 @@ import json
 import os
 import shlex
 import tempfile
+from collections.abc import Collection, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
@@ -77,15 +78,20 @@ def _command_tokens(handler: dict[str, object]) -> list[str]:
         return []
 
 
-def _is_managed_handler(handler: dict[str, object], hookset_name: str) -> bool:
+def _has_marker(handler: dict[str, object], option: str, values: Collection[str]) -> bool:
     tokens = _command_tokens(handler)
     for index, token in enumerate(tokens[:-1]):
-        if token == "--hookset-name" and tokens[index + 1] == hookset_name:
+        if token == option and tokens[index + 1] in values:
             return True
     return False
 
 
-def _remove_managed_groups(config: dict[str, object], hookset_name: str) -> dict[str, object]:
+def _remove_managed_groups(
+    config: dict[str, object],
+    *,
+    hookset_names: Collection[str] = (),
+    collection_names: Collection[str] = (),
+) -> dict[str, object]:
     result = deepcopy(config)
     hooks = result.get("hooks")
     if hooks is None:
@@ -114,7 +120,12 @@ def _remove_managed_groups(config: dict[str, object], hookset_name: str) -> dict
                         f"existing hooks.{event_name} group contains a non-object handler"
                     )
                 handler = cast(dict[str, object], raw_handler)
-                if not _is_managed_handler(handler, hookset_name):
+                managed = _has_marker(handler, "--hookset-name", hookset_names) or _has_marker(
+                    handler,
+                    "--hookset-collection",
+                    collection_names,
+                )
+                if not managed:
                     kept_handlers.append(raw_handler)
 
             if kept_handlers:
@@ -142,13 +153,21 @@ def merge_managed_config(
 ) -> dict[str, object]:
     """Replace this hookset's prior handlers while preserving unrelated config."""
 
-    merged = _remove_managed_groups(existing, hookset_name)
+    merged = _remove_managed_groups(existing, hookset_names={hookset_name})
+    _append_generated_config(merged, generated)
+    return merged
+
+
+def _append_generated_config(
+    target: dict[str, object],
+    generated: dict[str, object],
+) -> None:
     generated_hooks = generated.get("hooks")
     if not isinstance(generated_hooks, dict):
         raise ValueError("generated config has non-object 'hooks'")
     generated_hooks = cast(dict[str, object], generated_hooks)
 
-    target_hooks = merged.setdefault("hooks", {})
+    target_hooks = target.setdefault("hooks", {})
     if not isinstance(target_hooks, dict):
         raise ValueError("existing config has non-object 'hooks'")
     target_hooks = cast(dict[str, object], target_hooks)
@@ -157,13 +176,31 @@ def merge_managed_config(
             raise ValueError("generated hooks must map event names to lists")
         raw_target = target_hooks.get(event_name)
         if raw_target is None:
-            target: list[object] = []
-            target_hooks[event_name] = target
+            event_groups: list[object] = []
+            target_hooks[event_name] = event_groups
         elif isinstance(raw_target, list):
-            target = cast(list[object], raw_target)
+            event_groups = cast(list[object], raw_target)
         else:
             raise ValueError(f"existing hooks.{event_name} is not a list")
-        target.extend(cast(list[object], deepcopy(groups)))
+        event_groups.extend(cast(list[object], deepcopy(groups)))
+
+
+def merge_managed_collection_config(
+    existing: dict[str, object],
+    generated: Sequence[dict[str, object]],
+    *,
+    collection_name: str,
+    hookset_names: Collection[str],
+) -> dict[str, object]:
+    """Reconcile one collection while preserving every unrelated handler."""
+
+    merged = _remove_managed_groups(
+        existing,
+        hookset_names=hookset_names,
+        collection_names={collection_name},
+    )
+    for config in generated:
+        _append_generated_config(merged, config)
     return merged
 
 
@@ -210,7 +247,48 @@ def uninstall_config(path: str | Path, *, hookset_name: str) -> ConfigChange:
     if not target.exists():
         return ConfigChange(path=target, changed=False)
     existing = read_json_object(target)
-    updated = _remove_managed_groups(existing, hookset_name)
+    updated = _remove_managed_groups(existing, hookset_names={hookset_name})
+    changed = updated != existing
+    if changed:
+        _atomic_write_json(target, updated)
+    return ConfigChange(path=target, changed=changed)
+
+
+def install_collection_config(
+    path: str | Path,
+    generated: Sequence[dict[str, object]],
+    *,
+    collection_name: str,
+    hookset_names: Collection[str],
+) -> ConfigChange:
+    """Atomically reconcile all members owned by one collection."""
+
+    target = Path(path).expanduser()
+    existing = read_json_object(target)
+    merged = merge_managed_collection_config(
+        existing,
+        generated,
+        collection_name=collection_name,
+        hookset_names=hookset_names,
+    )
+    changed = merged != existing
+    if changed:
+        _atomic_write_json(target, merged)
+    return ConfigChange(path=target, changed=changed)
+
+
+def uninstall_collection_config(
+    path: str | Path,
+    *,
+    collection_name: str,
+) -> ConfigChange:
+    """Remove every handler marked as belonging to one collection."""
+
+    target = Path(path).expanduser()
+    if not target.exists():
+        return ConfigChange(path=target, changed=False)
+    existing = read_json_object(target)
+    updated = _remove_managed_groups(existing, collection_names={collection_name})
     changed = updated != existing
     if changed:
         _atomic_write_json(target, updated)

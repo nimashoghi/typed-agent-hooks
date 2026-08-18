@@ -12,7 +12,7 @@ from typed_agent_hooks.commands.runtime import input_schema, run_hook, validate_
 from typed_agent_hooks.commands.scaffold import create_project
 from typed_agent_hooks.core import Provider
 from typed_agent_hooks.fastmcp.shim import add_forward_arguments, run_from_args
-from typed_agent_hooks.hooksets import ConfigChange
+from typed_agent_hooks.hooksets import CollectionCheckReport, ConfigChange
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +55,11 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
 def _cmd_check(args: argparse.Namespace) -> int:
     report = hookset_commands.check(args.hookset, python_executable=args.python_executable)
+    if isinstance(report, CollectionCheckReport):
+        print(f"ok: {report.name} ({len(report.members)} hooksets)")
+        for member in report.members:
+            print(f"- {member.name} ({member.mode}): {', '.join(member.configured_events)}")
+        return 0
     print(f"ok: {report.name} ({report.mode})")
     print(f"providers: {', '.join(report.providers)}")
     print(f"events: {', '.join(report.configured_events)}")
@@ -171,6 +176,7 @@ def _add_run_parser(
     parser.add_argument("app", help="module:object or path.py:object")
     parser.add_argument("--base-dir", default=None)
     parser.add_argument("--hookset-name", help=argparse.SUPPRESS)
+    parser.add_argument("--hookset-collection", help=argparse.SUPPRESS)
     if mode == "shared":
         parser.add_argument(
             "--provider",
@@ -202,7 +208,7 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--force", action="store_true")
     init.set_defaults(handler=_cmd_init)
 
-    check = commands.add_parser("check", help="validate a hookset and imported app")
+    check = commands.add_parser("check", help="validate a hookset or collection")
     check.add_argument("hookset")
     check.add_argument("--python", dest="python_executable", default=None)
     check.set_defaults(handler=_cmd_check)
@@ -214,13 +220,13 @@ def build_parser() -> argparse.ArgumentParser:
     render.add_argument("--pretty", action="store_true")
     render.set_defaults(handler=_cmd_render)
 
-    install = commands.add_parser("install", help="check and install a managed hookset")
+    install = commands.add_parser("install", help="install a managed hookset or collection")
     install.add_argument("hookset")
     _add_install_location(install)
     install.add_argument("--python", dest="python_executable", default=None)
     install.set_defaults(handler=_cmd_install)
 
-    uninstall = commands.add_parser("uninstall", help="remove a managed hookset")
+    uninstall = commands.add_parser("uninstall", help="remove a hookset or collection")
     uninstall.add_argument("hookset")
     _add_install_location(uninstall)
     uninstall.set_defaults(handler=_cmd_uninstall)

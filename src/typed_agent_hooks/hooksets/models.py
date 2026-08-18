@@ -26,6 +26,7 @@ _TOML = _load_toml_module()
 
 Mode: TypeAlias = Literal["codex", "claude_code", "shared"]
 ProviderName: TypeAlias = Literal["codex", "claude_code"]
+HooksetPath: TypeAlias = Annotated[str, Field(min_length=1)]
 
 
 def _default_providers() -> list[ProviderName]:
@@ -197,6 +198,22 @@ HookSet: TypeAlias = Annotated[
 HOOKSET_ADAPTER: TypeAdapter[HookSet] = TypeAdapter(HookSet)
 
 
+class HookCollection(StrictModel):
+    """An ordered set of independently owned hooksets managed together."""
+
+    name: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
+    hooksets: list[HooksetPath] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _hookset_paths_are_unique(self) -> "HookCollection":
+        if len(set(self.hooksets)) != len(self.hooksets):
+            raise ValueError("hooksets must not contain duplicates")
+        return self
+
+
+HookTarget: TypeAlias = HookSet | HookCollection
+
+
 def _validate_app_spec(app: str) -> None:
     try:
         split_object_spec(app)
@@ -211,7 +228,36 @@ def parse_hookset(data: str | bytes) -> HookSet:
     return HOOKSET_ADAPTER.validate_python(_TOML.loads(text))
 
 
+def parse_hook_collection(data: str | bytes) -> HookCollection:
+    """Parse and strictly validate a hook collection TOML document."""
+
+    text = data.decode() if isinstance(data, bytes) else data
+    return HookCollection.model_validate(_TOML.loads(text))
+
+
+def parse_hook_target(data: str | bytes) -> HookTarget:
+    """Parse either a hookset or a hook collection from TOML."""
+
+    text = data.decode() if isinstance(data, bytes) else data
+    decoded = _TOML.loads(text)
+    if "hooksets" in decoded:
+        return HookCollection.model_validate(decoded)
+    return HOOKSET_ADAPTER.validate_python(decoded)
+
+
 def read_hookset(path: str | Path) -> HookSet:
     """Read and strictly validate a hookset TOML file."""
 
     return parse_hookset(Path(path).expanduser().read_bytes())
+
+
+def read_hook_collection(path: str | Path) -> HookCollection:
+    """Read and strictly validate a hook collection TOML file."""
+
+    return parse_hook_collection(Path(path).expanduser().read_bytes())
+
+
+def read_hook_target(path: str | Path) -> HookTarget:
+    """Read either a hookset or hook collection TOML file."""
+
+    return parse_hook_target(Path(path).expanduser().read_bytes())

@@ -273,6 +273,29 @@ typed-agent-hooks uninstall .agent-hooks/hookset.toml \
   --scope project
 ```
 
+## Manage several hooksets as one collection
+
+Keep independently owned hooksets in separate directories and list them in an ordered collection manifest:
+
+```toml
+name = "repository-hooks"
+hooksets = [
+  "git-guard/hookset.toml",
+  "wiki-hints/hookset.toml",
+]
+```
+
+The ordinary lifecycle commands accept either a hookset or a collection:
+
+```bash
+typed-agent-hooks check .agent-hooks/collection.toml
+typed-agent-hooks render .agent-hooks/collection.toml --provider all --pretty
+typed-agent-hooks install .agent-hooks/collection.toml --provider all --scope project
+typed-agent-hooks uninstall .agent-hooks/collection.toml --provider all --scope project
+```
+
+Collection installation validates every member before writing provider configuration, preserves manifest order, and marks every generated command with both its hookset name and collection name. Reinstalling atomically reconciles the collection in each provider file: changed members are replaced and members removed from the manifest are removed, while unrelated hooks and settings are preserved.
+
 ## Run and validate captured payloads
 
 Provider-specific application:

@@ -78,6 +78,7 @@ def add_forward_arguments(parser: argparse.ArgumentParser) -> None:
     # carried so the installed command is marker-managed (see hooksets/install.py);
     # not used for routing.
     parser.add_argument("--hookset-name", dest="hookset_name", default=None)
+    parser.add_argument("--hookset-collection", dest="hookset_collection", default=None)
     parser.add_argument("--registry-root", dest="registry_root", default=None)
     parser.add_argument(
         "--startup-wait",

@@ -28,6 +28,7 @@ def check_hookset(
     base_dir: str | Path = ".",
     python_executable: str | None = None,
     command_prefix: Sequence[str] | None = None,
+    collection_name: str | None = None,
 ) -> CheckReport:
     """Compile the hookset, import its app, and verify required handlers exist."""
 
@@ -36,6 +37,7 @@ def check_hookset(
         base_dir=base_dir,
         python_executable=python_executable,
         command_prefix=command_prefix,
+        collection_name=collection_name,
     )
 
     if isinstance(hookset, FastmcpHookSet):

@@ -63,17 +63,25 @@ def _runner_args(
     provider: ProviderName,
     app_spec: str,
     hookset_name: str,
+    collection_name: str | None,
 ) -> list[str]:
     cli_mode = mode.replace("_", "-")
     args = [cli_mode, app_spec]
     if mode == "shared":
         args.extend(["--provider", provider.replace("_", "-")])
     args.extend(["--hookset-name", hookset_name])
+    if collection_name is not None:
+        args.extend(["--hookset-collection", collection_name])
     return args
 
 
-def _forward_args(provider: ProviderName, server: str, hookset_name: str) -> list[str]:
-    return [
+def _forward_args(
+    provider: ProviderName,
+    server: str,
+    hookset_name: str,
+    collection_name: str | None,
+) -> list[str]:
+    args = [
         "--provider",
         provider.replace("_", "-"),
         "--server-name",
@@ -81,6 +89,9 @@ def _forward_args(provider: ProviderName, server: str, hookset_name: str) -> lis
         "--hookset-name",
         hookset_name,
     ]
+    if collection_name is not None:
+        args.extend(["--hookset-collection", collection_name])
+    return args
 
 
 def _codex_command(
@@ -89,8 +100,9 @@ def _codex_command(
     mode: str,
     app_spec: str,
     hookset_name: str,
+    collection_name: str | None,
 ) -> str:
-    args = _runner_args(mode, "codex", app_spec, hookset_name)
+    args = _runner_args(mode, "codex", app_spec, hookset_name, collection_name)
     return shlex.join([*command_prefix, *args])
 
 
@@ -100,8 +112,9 @@ def _claude_command(
     mode: str,
     app_spec: str,
     hookset_name: str,
+    collection_name: str | None,
 ) -> tuple[str, list[str]]:
-    args = _runner_args(mode, "claude_code", app_spec, hookset_name)
+    args = _runner_args(mode, "claude_code", app_spec, hookset_name, collection_name)
     return command_prefix[0], [*command_prefix[1:], *args]
 
 
@@ -110,12 +123,14 @@ def _compile_codex(
     *,
     app_spec: str,
     command_prefix: Sequence[str],
+    collection_name: str | None,
 ) -> codex.config.HooksFile:
     command = _codex_command(
         command_prefix=command_prefix,
         mode=hookset.mode,
         app_spec=app_spec,
         hookset_name=hookset.name,
+        collection_name=collection_name,
     )
     hooks: dict[codex.events.CodexEventName, list[codex.config.HookGroup]] = {}
 
@@ -162,12 +177,14 @@ def _compile_claude_code(
     *,
     app_spec: str,
     command_prefix: Sequence[str],
+    collection_name: str | None,
 ) -> claude_code.config.SettingsHooks:
     command, args = _claude_command(
         command_prefix=command_prefix,
         mode=hookset.mode,
         app_spec=app_spec,
         hookset_name=hookset.name,
+        collection_name=collection_name,
     )
     hooks: dict[claude_code.events.ClaudeEventName, list[claude_code.config.HookGroup]] = {}
 
@@ -214,8 +231,9 @@ def _compile_fastmcp(
     *,
     provider: ProviderName,
     command_prefix: Sequence[str],
+    collection_name: str | None,
 ) -> CompiledConfig:
-    fwd = _forward_args(provider, hookset.server, hookset.name)
+    fwd = _forward_args(provider, hookset.server, hookset.name, collection_name)
     if provider == "codex":
         command = shlex.join([*command_prefix, *fwd])
         codex_hooks: dict[codex.events.CodexEventName, list[codex.config.HookGroup]] = {}
@@ -257,6 +275,7 @@ def compile_hookset(
     base_dir: str | Path = ".",
     python_executable: str | None = None,
     command_prefix: Sequence[str] | None = None,
+    collection_name: str | None = None,
 ) -> CompiledConfig:
     """Compile one hookset for one explicit provider.
 
@@ -284,16 +303,27 @@ def compile_hookset(
             hookset,
             provider=provider,
             command_prefix=prefix,
+            collection_name=collection_name,
         )
     app_spec = resolve_app_spec(hookset.app, base_dir=base_dir)
 
     if provider == "codex":
         if isinstance(hookset, ClaudeCodeHookSet):
             raise AssertionError("provider compatibility check failed")
-        return _compile_codex(hookset, app_spec=app_spec, command_prefix=prefix)
+        return _compile_codex(
+            hookset,
+            app_spec=app_spec,
+            command_prefix=prefix,
+            collection_name=collection_name,
+        )
     if isinstance(hookset, CodexHookSet):
         raise AssertionError("provider compatibility check failed")
-    return _compile_claude_code(hookset, app_spec=app_spec, command_prefix=prefix)
+    return _compile_claude_code(
+        hookset,
+        app_spec=app_spec,
+        command_prefix=prefix,
+        collection_name=collection_name,
+    )
 
 
 def compile_hooksets(
@@ -303,6 +333,7 @@ def compile_hooksets(
     base_dir: str | Path = ".",
     python_executable: str | None = None,
     command_prefix: Sequence[str] | None = None,
+    collection_name: str | None = None,
 ) -> dict[ProviderName, CompiledConfig]:
     """Compile a hookset for every selected provider."""
 
@@ -313,6 +344,7 @@ def compile_hooksets(
             base_dir=base_dir,
             python_executable=python_executable,
             command_prefix=command_prefix,
+            collection_name=collection_name,
         )
         for target in target_providers(hookset, provider)
     }
