@@ -27,6 +27,7 @@ _TOML = _load_toml_module()
 Mode: TypeAlias = Literal["codex", "claude_code", "shared"]
 ProviderName: TypeAlias = Literal["codex", "claude_code"]
 HooksetPath: TypeAlias = Annotated[str, Field(min_length=1)]
+Dependency: TypeAlias = Annotated[str, Field(min_length=1)]
 
 
 def _default_providers() -> list[ProviderName]:
@@ -34,6 +35,18 @@ def _default_providers() -> list[ProviderName]:
 
 
 PositiveSeconds = Annotated[int, Field(gt=0)]
+
+
+class LocalHookSet(StrictModel):
+    """Fields shared by hooksets that execute a local application."""
+
+    dependencies: list[Dependency] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _dependencies_are_unique(self) -> "LocalHookSet":
+        if len(set(self.dependencies)) != len(self.dependencies):
+            raise ValueError("dependencies must not contain duplicates")
+        return self
 
 
 class CodexHookSpec(StrictModel):
@@ -94,7 +107,7 @@ class SharedHookSpec(StrictModel):
     claude_code: SharedClaudeCodeOptions = Field(default_factory=SharedClaudeCodeOptions)
 
 
-class CodexHookSet(StrictModel):
+class CodexHookSet(LocalHookSet):
     """Codex-only hookset."""
 
     name: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
@@ -108,7 +121,7 @@ class CodexHookSet(StrictModel):
         return self
 
 
-class ClaudeCodeHookSet(StrictModel):
+class ClaudeCodeHookSet(LocalHookSet):
     """Claude Code-only hookset."""
 
     name: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
@@ -122,7 +135,7 @@ class ClaudeCodeHookSet(StrictModel):
         return self
 
 
-class SharedHookSet(StrictModel):
+class SharedHookSet(LocalHookSet):
     """Shared semantic hookset compiled separately for each provider."""
 
     name: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")

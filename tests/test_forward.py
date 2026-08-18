@@ -92,6 +92,34 @@ def test_default_command_prefix_self_bootstraps_git_install(
     assert Path(cmd[0]).stem.lower() == "uvx" or cmd[1:3] == ["tool", "run"]
 
 
+def test_self_bootstrap_includes_hookset_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        launcher,
+        "self_install_spec",
+        lambda: "git+https://github.com/o/r@abc123",
+    )
+
+    cmd = default_command_prefix(
+        "shared",
+        python_executable="/ephemeral/python",
+        self_bootstrap=True,
+        dependencies=["foam-wiki>=0.4.2,<1", "pyyaml>=6"],
+    )
+
+    assert cmd[-8:] == [
+        "--from",
+        "git+https://github.com/o/r@abc123",
+        "--with",
+        "foam-wiki>=0.4.2,<1",
+        "--with",
+        "pyyaml>=6",
+        "typed-agent-hooks",
+        "run",
+    ]
+
+
 def test_explicit_python_disables_self_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         launcher,

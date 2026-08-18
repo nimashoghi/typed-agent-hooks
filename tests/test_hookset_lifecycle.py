@@ -210,3 +210,18 @@ matcher = "Bash"
 
     with pytest.raises(ValidationError, match="Claude Code options"):
         parse_hookset(text)
+
+
+def test_local_hookset_rejects_duplicate_dependencies() -> None:
+    text = """
+name = "policy"
+mode = "shared"
+app = "hooks.py:app"
+dependencies = ["foam-wiki>=0.4", "foam-wiki>=0.4"]
+
+[[hooks]]
+event = "PromptSubmitted"
+"""
+
+    with pytest.raises(ValidationError, match="dependencies must not contain duplicates"):
+        parse_hookset(text)

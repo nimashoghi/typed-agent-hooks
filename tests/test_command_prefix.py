@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+import typed_agent_hooks.hooksets.launcher as launcher
 from typed_agent_hooks import claude_code
 from typed_agent_hooks.hooksets import compile_hooksets, parse_hookset
 
@@ -45,3 +46,28 @@ def test_command_prefix_applies_to_every_hookset_mode() -> None:
 def test_command_prefix_cannot_be_empty() -> None:
     with pytest.raises(ValueError, match="at least one argument"):
         compile_hooksets(parse_hookset(SHARED_TOML), command_prefix=[])
+
+
+def test_hookset_dependencies_reach_self_bootstrapping_commands(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        launcher,
+        "self_install_spec",
+        lambda: "git+https://github.com/o/r@abc123",
+    )
+    hookset = parse_hookset(
+        SHARED_TOML.replace(
+            'app = "hooks.py:app"',
+            'app = "hooks.py:app"\ndependencies = ["foam-wiki>=0.4.2,<1"]',
+        )
+    )
+
+    configs = compile_hooksets(hookset)
+
+    codex_command = configs["codex"].hooks["SessionStart"][0].hooks[0].command
+    assert "--with 'foam-wiki>=0.4.2,<1'" in codex_command
+    claude = configs["claude_code"]
+    assert isinstance(claude, claude_code.config.SettingsHooks)
+    assert claude.hooks["SessionStart"][0].hooks[0].args is not None
+    assert "foam-wiki>=0.4.2,<1" in claude.hooks["SessionStart"][0].hooks[0].args

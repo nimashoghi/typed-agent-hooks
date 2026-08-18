@@ -15,6 +15,7 @@ from __future__ import annotations
 import importlib.metadata as importlib_metadata
 import json
 import shutil
+from collections.abc import Sequence
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
 _DISTRIBUTION = "typed-agent-hooks"
@@ -81,16 +82,18 @@ def default_command_prefix(
     *,
     python_executable: str,
     self_bootstrap: bool,
+    dependencies: Sequence[str] = (),
 ) -> list[str]:
     """Return the command prefix that launches one installed hook."""
 
     subcommand = "forward" if mode == "fastmcp" else "run"
     if self_bootstrap and (spec := self_install_spec()) is not None:
-        return [
+        prefix = [
             *_uv_run_prefix(),
             "--from",
             spec,
-            "typed-agent-hooks",
-            subcommand,
         ]
+        for dependency in dependencies:
+            prefix.extend(["--with", dependency])
+        return [*prefix, "typed-agent-hooks", subcommand]
     return [python_executable, "-m", "typed_agent_hooks", subcommand]

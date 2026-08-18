@@ -214,7 +214,10 @@ For a multi-file local application, point `app` at a package initializer. Relati
 
 ```toml
 app = "wiki_hints/__init__.py:app"
+dependencies = ["foam-wiki>=0.4.2,<1"]
 ```
+
+When typed-agent-hooks was installed from Git, generated commands reproduce that immutable source with `uvx` and add each declared dependency through `--with`. An explicit `--python` or custom command prefix instead uses the environment supplied by the caller, which must already contain those dependencies.
 
 Shared defaults and provider-only overrides are distinct. Invalid combinations, such as Claude options when Claude Code is disabled, are rejected while parsing the hookset.
 

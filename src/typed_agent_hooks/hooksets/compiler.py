@@ -294,6 +294,7 @@ def compile_hookset(
             hookset.mode,
             python_executable=executable,
             self_bootstrap=python_executable is None,
+            dependencies=(hookset.dependencies if not isinstance(hookset, FastmcpHookSet) else ()),
         )
     )
     if not prefix:
