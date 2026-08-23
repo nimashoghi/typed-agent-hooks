@@ -117,11 +117,12 @@ def _remove_managed_groups(
     *,
     app_names: Collection[str] = (),
     collection_names: Collection[str] = (),
-) -> dict[str, object]:
+) -> tuple[dict[str, object], dict[str, int]]:
     result = deepcopy(config)
+    insertion_points: dict[str, int] = {}
     hooks = result.get("hooks")
     if hooks is None:
-        return result
+        return result, insertion_points
     if not isinstance(hooks, dict):
         raise ValueError("existing config has non-object 'hooks'")
     hooks = cast(dict[str, object], hooks)
@@ -147,7 +148,9 @@ def _remove_managed_groups(
                 managed = _has_marker(handler, APP_MARKER, app_names) or _has_marker(
                     handler, COLLECTION_MARKER, collection_names
                 )
-                if not managed:
+                if managed:
+                    insertion_points.setdefault(event_name, len(kept_groups))
+                else:
                     kept_handlers.append(raw_handler)
             if kept_handlers:
                 group = dict(raw_group)
@@ -162,10 +165,14 @@ def _remove_managed_groups(
         del hooks[event_name]
     if not hooks:
         result.pop("hooks", None)
-    return result
+    return result, insertion_points
 
 
-def _append_generated_config(target: dict[str, object], generated: dict[str, object]) -> None:
+def _insert_generated_config(
+    target: dict[str, object],
+    generated: dict[str, object],
+    insertion_points: dict[str, int],
+) -> None:
     generated_hooks = generated.get("hooks")
     if not isinstance(generated_hooks, dict):
         raise ValueError("generated config has non-object 'hooks'")
@@ -184,7 +191,13 @@ def _append_generated_config(target: dict[str, object], generated: dict[str, obj
             event_groups = cast(list[object], raw_target)
         else:
             raise ValueError(f"existing hooks.{event_name} is not a list")
-        event_groups.extend(cast(list[object], deepcopy(groups)))
+        copied = cast(list[object], deepcopy(groups))
+        insertion = insertion_points.get(event_name)
+        if insertion is None:
+            event_groups.extend(copied)
+        else:
+            event_groups[insertion:insertion] = copied
+            insertion_points[event_name] = insertion + len(copied)
 
 
 def merge_app_config(
@@ -195,9 +208,9 @@ def merge_app_config(
 ) -> dict[str, object]:
     """Replace one application's handlers while preserving unrelated config."""
 
-    merged = _remove_managed_groups(existing, app_names={app_name})
+    merged, insertion_points = _remove_managed_groups(existing, app_names={app_name})
     if generated is not None:
-        _append_generated_config(merged, generated)
+        _insert_generated_config(merged, generated, insertion_points)
     return merged
 
 
@@ -209,9 +222,11 @@ def merge_collection_config(
 ) -> dict[str, object]:
     """Replace an ordered collection while preserving unrelated config."""
 
-    merged = _remove_managed_groups(existing, collection_names={collection_name})
+    merged, insertion_points = _remove_managed_groups(
+        existing, collection_names={collection_name}
+    )
     for config in generated:
-        _append_generated_config(merged, config)
+        _insert_generated_config(merged, config, insertion_points)
     return merged
 
 

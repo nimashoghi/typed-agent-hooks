@@ -101,3 +101,32 @@ def test_reconciliation_preserves_unrelated_config(tmp_path: Path) -> None:
     assert first["codex"].changed is True
     assert second["codex"].changed is False
     assert read_json_object(path)["other"] == {"keep": True}
+
+
+def test_reinstall_preserves_position_relative_to_other_managed_apps(
+    tmp_path: Path,
+) -> None:
+    first = shared.HookApp(name="first", providers=("codex",))
+    second = shared.HookApp(name="second", providers=("codex",))
+
+    @first.on(shared.events.PromptSubmitted)
+    def first_prompt(_event: shared.events.PromptSubmitted) -> shared.outputs.Result:
+        return None
+
+    @second.on(shared.events.PromptSubmitted)
+    def second_prompt(_event: shared.events.PromptSubmitted) -> shared.outputs.Result:
+        return None
+
+    first_executable = _executable(tmp_path, "first.py")
+    first.install(executable=first_executable, project_root=tmp_path)
+    second.install(
+        executable=_executable(tmp_path, "second.py"),
+        project_root=tmp_path,
+    )
+    path = tmp_path / ".codex" / "hooks.json"
+    before = path.read_text(encoding="utf-8")
+
+    change = first.install(executable=first_executable, project_root=tmp_path)
+
+    assert change["codex"].changed is False
+    assert path.read_text(encoding="utf-8") == before
