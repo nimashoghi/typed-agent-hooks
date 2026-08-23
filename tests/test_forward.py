@@ -23,7 +23,7 @@ def _patch_dist(monkeypatch: pytest.MonkeyPatch, direct_url: str | None) -> None
     )
 
 
-def test_self_install_spec_preserves_requested_revision_without_credentials(
+def test_self_install_spec_uses_exact_commit_without_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_dist(
@@ -34,7 +34,7 @@ def test_self_install_spec_preserves_requested_revision_without_credentials(
 
     spec = launcher.self_install_spec()
 
-    assert spec == "git+https://github.com/o/r@main"
+    assert spec == "git+https://github.com/o/r@abc123"
     assert "secret" not in spec
 
 

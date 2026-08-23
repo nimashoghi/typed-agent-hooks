@@ -27,7 +27,7 @@ def _credential_free_url(value: str) -> str | None:
 
 
 def self_install_spec() -> str | None:
-    """Return the credential-free Git requirement used for this installation."""
+    """Return the immutable Git requirement used for this installation."""
 
     try:
         raw = importlib_metadata.distribution("typed-agent-hooks").read_text("direct_url.json")
@@ -50,7 +50,7 @@ def self_install_spec() -> str | None:
         return None
     requested = vcs.get("requested_revision")
     commit = vcs.get("commit_id")
-    ref = requested if isinstance(requested, str) and requested else commit
+    ref = commit if isinstance(commit, str) and commit else requested
     return f"git+{clean_url}@{ref}" if isinstance(ref, str) and ref else f"git+{clean_url}"
 
 

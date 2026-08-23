@@ -43,6 +43,8 @@ if __name__ == "__main__":
     hooks.main(cli)
 ```
 
+Create and commit the adjacent script lockfile with `uv lock --script project_context.py`. Keep `@main` in the PEP 723 declaration and refresh the lock when intentionally updating TAH; ordinary hook invocations then reuse the resolved installation.
+
 Make the file executable and run its ordinary domain CLI directly:
 
 ```console
