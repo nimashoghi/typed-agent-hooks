@@ -96,7 +96,7 @@ def test_compaction_context_error_points_to_context_capable_boundary() -> None:
 
 
 def test_shared_app_requires_explicit_provider_at_runtime() -> None:
-    app = shared.HookApp()
+    app = shared.HookApp(name="test")
 
     @app.on(shared.events.PromptSubmitted)
     def add_context(
@@ -143,7 +143,7 @@ def test_shared_permission_decisions_render_for_both_providers() -> None:
 
 
 def test_registration_uses_event_models_not_strings() -> None:
-    app = codex.HookApp()
+    app = shared.HookApp(name="test")
 
     with pytest.raises(ValueError, match="unsupported event model"):
-        app.on(cast(Any, shared.events.PromptSubmitted))
+        app.on(cast(Any, codex.events.UserPromptSubmitInput))

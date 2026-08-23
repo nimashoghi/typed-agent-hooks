@@ -60,25 +60,6 @@ def test_provider_inputs_still_reject_declared_field_type_drift() -> None:
         claude_code.parse_input(payload)
 
 
-def test_codex_app_rejects_an_output_for_the_wrong_event() -> None:
-    app = codex.HookApp()
-
-    @app.on(codex.events.UserPromptSubmitInput)
-    def wrong_output(
-        _event: codex.events.AnyInput,
-    ) -> codex.outputs.HookResult:
-        return codex.outputs.PreToolUseOutput()
-
-    payload = next(
-        payload
-        for payload in _payloads("codex_inputs.json")
-        if payload["hook_event_name"] == "UserPromptSubmit"
-    )
-
-    with pytest.raises(TypeError, match="expected UserPromptSubmitOutput"):
-        app.handle_json(payload)
-
-
 def test_provider_config_rejects_matchers_for_events_that_ignore_them() -> None:
     codex_group = codex.config.HookGroup(
         matcher="anything",

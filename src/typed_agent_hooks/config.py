@@ -1,10 +1,12 @@
-"""Idempotent installation and removal of managed hookset configuration."""
+"""Preservation-oriented installation of managed provider hook configuration."""
+
+from __future__ import annotations
 
 import json
 import os
 import shlex
 import tempfile
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,17 +14,40 @@ from typing import Literal, TypeAlias, cast
 
 from pydantic import BaseModel
 
-from .models import ProviderName
+from .internal import APP_MARKER, COLLECTION_MARKER
 
+ProviderName: TypeAlias = Literal["codex", "claude_code"]
+ProviderSelection: TypeAlias = ProviderName | Literal["all"]
 Scope: TypeAlias = Literal["project", "user"]
+ALL_PROVIDERS: tuple[ProviderName, ...] = ("codex", "claude_code")
 
 
 @dataclass(frozen=True, slots=True)
 class ConfigChange:
-    """Result of installing or uninstalling one provider config file."""
+    """One provider config file considered by a reconciliation."""
 
     path: Path
     changed: bool
+
+
+def validate_name(value: str, *, kind: str) -> str:
+    """Validate a stable managed application or collection name."""
+
+    import re
+
+    if re.fullmatch(r"[a-z][a-z0-9_-]*", value) is None:
+        raise ValueError(f"{kind} must match [a-z][a-z0-9_-]*")
+    return value
+
+
+def selected_providers(provider: ProviderSelection) -> tuple[ProviderName, ...]:
+    """Expand one explicit provider selection."""
+
+    if provider == "all":
+        return ALL_PROVIDERS
+    if provider not in ALL_PROVIDERS:
+        raise ValueError("provider must be 'codex', 'claude_code', or 'all'")
+    return (provider,)
 
 
 def default_config_path(
@@ -31,8 +56,10 @@ def default_config_path(
     scope: Scope,
     cwd: str | Path = ".",
 ) -> Path:
-    """Return the standard provider config path for a scope."""
+    """Return the standard provider configuration path for one scope."""
 
+    if scope not in {"project", "user"}:
+        raise ValueError("scope must be 'project' or 'user'")
     if provider == "codex":
         return (
             Path(cwd) / ".codex" / "hooks.json"
@@ -58,7 +85,7 @@ def read_json_object(path: str | Path) -> dict[str, object]:
     target = Path(path).expanduser()
     if not target.exists():
         return {}
-    decoded: object = json.loads(target.read_text())
+    decoded: object = json.loads(target.read_text(encoding="utf-8"))
     if not isinstance(decoded, dict):
         raise ValueError(f"{target} does not contain a JSON object")
     return cast(dict[str, object], decoded)
@@ -68,7 +95,6 @@ def _command_tokens(handler: dict[str, object]) -> list[str]:
     args = handler.get("args")
     if isinstance(args, list) and all(isinstance(value, str) for value in args):
         return cast(list[str], args)
-
     command = handler.get("command")
     if not isinstance(command, str):
         return []
@@ -80,16 +106,16 @@ def _command_tokens(handler: dict[str, object]) -> list[str]:
 
 def _has_marker(handler: dict[str, object], option: str, values: Collection[str]) -> bool:
     tokens = _command_tokens(handler)
-    for index, token in enumerate(tokens[:-1]):
-        if token == option and tokens[index + 1] in values:
-            return True
-    return False
+    return any(
+        token == option and index + 1 < len(tokens) and tokens[index + 1] in values
+        for index, token in enumerate(tokens)
+    )
 
 
 def _remove_managed_groups(
     config: dict[str, object],
     *,
-    hookset_names: Collection[str] = (),
+    app_names: Collection[str] = (),
     collection_names: Collection[str] = (),
 ) -> dict[str, object]:
     result = deepcopy(config)
@@ -104,7 +130,6 @@ def _remove_managed_groups(
     for event_name, raw_groups in hooks.items():
         if not isinstance(event_name, str) or not isinstance(raw_groups, list):
             raise ValueError("existing hooks must map event names to lists")
-
         kept_groups: list[object] = []
         for raw_group in raw_groups:
             if not isinstance(raw_group, dict):
@@ -112,7 +137,6 @@ def _remove_managed_groups(
             raw_handlers = raw_group.get("hooks")
             if not isinstance(raw_handlers, list):
                 raise ValueError(f"existing hooks.{event_name} group has non-list hooks")
-
             kept_handlers: list[object] = []
             for raw_handler in raw_handlers:
                 if not isinstance(raw_handler, dict):
@@ -120,19 +144,15 @@ def _remove_managed_groups(
                         f"existing hooks.{event_name} group contains a non-object handler"
                     )
                 handler = cast(dict[str, object], raw_handler)
-                managed = _has_marker(handler, "--hookset-name", hookset_names) or _has_marker(
-                    handler,
-                    "--hookset-collection",
-                    collection_names,
+                managed = _has_marker(handler, APP_MARKER, app_names) or _has_marker(
+                    handler, COLLECTION_MARKER, collection_names
                 )
                 if not managed:
                     kept_handlers.append(raw_handler)
-
             if kept_handlers:
                 group = dict(raw_group)
                 group["hooks"] = kept_handlers
                 kept_groups.append(group)
-
         if kept_groups:
             hooks[event_name] = kept_groups
         else:
@@ -145,28 +165,10 @@ def _remove_managed_groups(
     return result
 
 
-def merge_managed_config(
-    existing: dict[str, object],
-    generated: dict[str, object],
-    *,
-    hookset_name: str,
-) -> dict[str, object]:
-    """Replace this hookset's prior handlers while preserving unrelated config."""
-
-    merged = _remove_managed_groups(existing, hookset_names={hookset_name})
-    _append_generated_config(merged, generated)
-    return merged
-
-
-def _append_generated_config(
-    target: dict[str, object],
-    generated: dict[str, object],
-) -> None:
+def _append_generated_config(target: dict[str, object], generated: dict[str, object]) -> None:
     generated_hooks = generated.get("hooks")
     if not isinstance(generated_hooks, dict):
         raise ValueError("generated config has non-object 'hooks'")
-    generated_hooks = cast(dict[str, object], generated_hooks)
-
     target_hooks = target.setdefault("hooks", {})
     if not isinstance(target_hooks, dict):
         raise ValueError("existing config has non-object 'hooks'")
@@ -185,20 +187,29 @@ def _append_generated_config(
         event_groups.extend(cast(list[object], deepcopy(groups)))
 
 
-def merge_managed_collection_config(
+def merge_app_config(
+    existing: dict[str, object],
+    generated: dict[str, object] | None,
+    *,
+    app_name: str,
+) -> dict[str, object]:
+    """Replace one application's handlers while preserving unrelated config."""
+
+    merged = _remove_managed_groups(existing, app_names={app_name})
+    if generated is not None:
+        _append_generated_config(merged, generated)
+    return merged
+
+
+def merge_collection_config(
     existing: dict[str, object],
     generated: Sequence[dict[str, object]],
     *,
     collection_name: str,
-    hookset_names: Collection[str],
 ) -> dict[str, object]:
-    """Reconcile one collection while preserving every unrelated handler."""
+    """Replace an ordered collection while preserving unrelated config."""
 
-    merged = _remove_managed_groups(
-        existing,
-        hookset_names=hookset_names,
-        collection_names={collection_name},
-    )
+    merged = _remove_managed_groups(existing, collection_names={collection_name})
     for config in generated:
         _append_generated_config(merged, config)
     return merged
@@ -223,73 +234,75 @@ def _atomic_write_json(path: Path, data: dict[str, object]) -> None:
         temporary_path.unlink(missing_ok=True)
 
 
-def install_config(
-    path: str | Path,
-    generated: dict[str, object],
-    *,
-    hookset_name: str,
-) -> ConfigChange:
-    """Install or update one managed hookset atomically and idempotently."""
-
-    target = Path(path).expanduser()
-    existing = read_json_object(target)
-    merged = merge_managed_config(existing, generated, hookset_name=hookset_name)
-    changed = merged != existing
-    if changed:
-        _atomic_write_json(target, merged)
-    return ConfigChange(path=target, changed=changed)
-
-
-def uninstall_config(path: str | Path, *, hookset_name: str) -> ConfigChange:
-    """Remove one managed hookset while preserving all unrelated config."""
-
-    target = Path(path).expanduser()
-    if not target.exists():
-        return ConfigChange(path=target, changed=False)
-    existing = read_json_object(target)
-    updated = _remove_managed_groups(existing, hookset_names={hookset_name})
+def _reconcile_file(path: Path, updated: dict[str, object]) -> ConfigChange:
+    existing = read_json_object(path)
     changed = updated != existing
     if changed:
-        _atomic_write_json(target, updated)
-    return ConfigChange(path=target, changed=changed)
+        _atomic_write_json(path, updated)
+    return ConfigChange(path=path, changed=changed)
 
 
-def install_collection_config(
-    path: str | Path,
-    generated: Sequence[dict[str, object]],
+def _destinations(
+    provider: ProviderSelection,
     *,
-    collection_name: str,
-    hookset_names: Collection[str],
-) -> ConfigChange:
-    """Atomically reconcile all members owned by one collection."""
-
-    target = Path(path).expanduser()
-    existing = read_json_object(target)
-    merged = merge_managed_collection_config(
-        existing,
-        generated,
-        collection_name=collection_name,
-        hookset_names=hookset_names,
-    )
-    changed = merged != existing
-    if changed:
-        _atomic_write_json(target, merged)
-    return ConfigChange(path=target, changed=changed)
+    scope: Scope,
+    project_root: str | Path,
+    target_path: str | Path | None,
+) -> dict[ProviderName, Path]:
+    providers = selected_providers(provider)
+    if target_path is not None and len(providers) != 1:
+        raise ValueError("an explicit target path requires exactly one provider")
+    return {
+        name: (
+            Path(target_path).expanduser()
+            if target_path is not None
+            else default_config_path(name, scope=scope, cwd=project_root)
+        )
+        for name in providers
+    }
 
 
-def uninstall_collection_config(
-    path: str | Path,
+def reconcile_app_configs(
+    app_name: str,
+    generated: Mapping[ProviderName, dict[str, object]],
     *,
-    collection_name: str,
-) -> ConfigChange:
-    """Remove every handler marked as belonging to one collection."""
+    provider: ProviderSelection = "all",
+    scope: Scope = "project",
+    project_root: str | Path = ".",
+    target_path: str | Path | None = None,
+) -> dict[ProviderName, ConfigChange]:
+    """Reconcile one app across every selected provider, including disabled ones."""
 
-    target = Path(path).expanduser()
-    if not target.exists():
-        return ConfigChange(path=target, changed=False)
-    existing = read_json_object(target)
-    updated = _remove_managed_groups(existing, collection_names={collection_name})
-    changed = updated != existing
-    if changed:
-        _atomic_write_json(target, updated)
-    return ConfigChange(path=target, changed=changed)
+    validate_name(app_name, kind="app name")
+    changes: dict[ProviderName, ConfigChange] = {}
+    for name, path in _destinations(
+        provider, scope=scope, project_root=project_root, target_path=target_path
+    ).items():
+        existing = read_json_object(path)
+        updated = merge_app_config(existing, generated.get(name), app_name=app_name)
+        changes[name] = _reconcile_file(path, updated)
+    return changes
+
+
+def reconcile_collection_configs(
+    collection_name: str,
+    generated: Mapping[ProviderName, Sequence[dict[str, object]]],
+    *,
+    provider: ProviderSelection = "all",
+    scope: Scope = "project",
+    project_root: str | Path = ".",
+    target_path: str | Path | None = None,
+) -> dict[ProviderName, ConfigChange]:
+    """Reconcile an ordered collection across every selected provider."""
+
+    validate_name(collection_name, kind="collection name")
+    changes: dict[ProviderName, ConfigChange] = {}
+    for name, path in _destinations(
+        provider, scope=scope, project_root=project_root, target_path=target_path
+    ).items():
+        existing = read_json_object(path)
+        updated = merge_collection_config(
+            existing, generated.get(name, ()), collection_name=collection_name
+        )
+        changes[name] = _reconcile_file(path, updated)
+    return changes

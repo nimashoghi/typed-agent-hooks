@@ -23,8 +23,6 @@ pytest.importorskip("fastmcp")
 
 from fastmcp import FastMCP  # noqa: E402
 
-from typed_agent_hooks import codex  # noqa: E402
-from typed_agent_hooks.core import PlainTextOutput  # noqa: E402
 from typed_agent_hooks.fastmcp import bridge as B  # noqa: E402
 from typed_agent_hooks.fastmcp import rendezvous as rz  # noqa: E402
 from typed_agent_hooks.fastmcp import wire  # noqa: E402
@@ -69,15 +67,13 @@ async def _yield(value):
 
 
 def _app_returning(text, *, record=None):
-    app = codex.HookApp()
+    class App:
+        def handle_json(self, payload):
+            if record is not None:
+                record.append(payload["session_id"])
+            return text
 
-    @app.on(codex.events.SessionStartInput)
-    def _handler(ev):  # sync handler (the registry rejects async)
-        if record is not None:
-            record.append(ev.session_id)
-        return PlainTextOutput(text=text)
-
-    return app
+    return App()
 
 
 async def _client_forward(desc: dict, payload: dict, *, key: str, nonce: str | None = None):
@@ -196,15 +192,14 @@ def test_slow_handler_times_out_to_noop(short_base, monkeypatch):
     monkeypatch.setattr(B, "_DISPATCH_TIMEOUT", 0.1)
     _patch_registry(monkeypatch, short_base)
 
-    app = codex.HookApp()
-
-    @app.on(codex.events.SessionStartInput)
-    def _slow(ev):
-        time.sleep(0.5)  # exceeds the dispatch timeout
-        return PlainTextOutput(text="LATE")
+    class App:
+        def handle_json(self, payload):
+            del payload
+            time.sleep(0.5)  # exceeds the dispatch timeout
+            return "LATE"
 
     server = FastMCP("t", lifespan=lambda s: _yield(None))
-    B.attach(server, app, provider="codex", server_name="ipi")
+    B.attach(server, App(), provider="codex", server_name="ipi")
 
     state: dict = {}
 

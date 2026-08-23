@@ -1,10 +1,8 @@
-"""Tests for the stdlib-only forward shim (resolution ladder + fail-open)."""
+"""Tests for the forward function and its Cyclopts CLI."""
 
 from __future__ import annotations
 
-import argparse
 import contextlib
-import io
 import json
 import os
 import socket
@@ -115,11 +113,9 @@ def test_is_own_identity_event():
 
 
 def test_forward_cli_accepts_explicit_timeouts() -> None:
-    parser = argparse.ArgumentParser()
-    shim.add_forward_arguments(parser)
-
-    args = parser.parse_args(
+    command, bound, _ = shim.app.parse_args(
         [
+            "{}",
             "--provider",
             "codex",
             "--startup-wait",
@@ -129,8 +125,10 @@ def test_forward_cli_accepts_explicit_timeouts() -> None:
         ]
     )
 
-    assert args.startup_wait == 5
-    assert args.response_timeout == 31
+    assert command is shim.forward
+    assert bound.arguments["payload"] == {}
+    assert bound.arguments["startup_wait"] == 5
+    assert bound.arguments["response_timeout"] == 31
 
 
 def test_explicit_startup_wait_overrides_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -179,7 +177,7 @@ def test_forward_post_connect_close_is_noop(tmp_path):
         srv.close()
 
 
-# ---- run_from_args end to end (monkeypatched anchor + base) ----
+# ---- forward end to end (monkeypatched anchor + base) ----
 
 
 def _patch_registry(monkeypatch, base):
@@ -188,18 +186,8 @@ def _patch_registry(monkeypatch, base):
     monkeypatch.setattr(shim.rz, "sweep_base", lambda *a, **k: None)
 
 
-def _args():
-    return argparse.Namespace(
-        provider="codex", server_name="ipi", hookset_name=None, registry_root=None
-    )
-
-
 def _run(monkeypatch, payload):
-    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
-    out = io.StringIO()
-    monkeypatch.setattr("sys.stdout", out)
-    rc = shim.run_from_args(_args())
-    return rc, out.getvalue()
+    return shim.forward(payload, provider="codex")
 
 
 def test_run_forwards_to_exact_match(tmp_path, monkeypatch):
@@ -211,8 +199,8 @@ def test_run_forwards_to_exact_match(tmp_path, monkeypatch):
     srv = FakeServer(sp, wire.response_frame(ok=True, stdout="INJECTED"))
     _patch_registry(monkeypatch, base)
     try:
-        rc, out = _run(monkeypatch, {"session_id": "S", "hook_event_name": "SessionStart"})
-        assert rc == 0 and out == "INJECTED"
+        out = _run(monkeypatch, {"session_id": "S", "hook_event_name": "SessionStart"})
+        assert out == "INJECTED"
         assert srv.received[0]["key"] == "S"
     finally:
         srv.close()
@@ -226,10 +214,10 @@ def test_run_buffers_subagent_when_ambiguous(tmp_path, monkeypatch):
     _make_descriptor(adir, nonce="s1", bound_key=None)
     _make_descriptor(adir, nonce="s2", bound_key=None)  # 2 unbound -> ambiguous
     _patch_registry(monkeypatch, base)
-    rc, out = _run(
+    out = _run(
         monkeypatch, {"session_id": "P", "agent_id": "A", "hook_event_name": "SubagentStart"}
     )
-    assert rc == 0 and out == ""
+    assert out is None
     frames = rz.claim_pending(adir, "A", "tok")  # buffered under own-identity key "A"
     assert len(frames) == 1
     req = json.loads(frames[0][struct.calcsize(">I") :].decode("utf-8"))
@@ -245,8 +233,8 @@ def test_run_safe_noop_for_ambiguous_tool_event(tmp_path, monkeypatch):
     _make_descriptor(adir, nonce="s2", bound_key=None)
     _patch_registry(monkeypatch, base)
     # codex tool event: no agent_id -> key is parent "P"; ambiguous -> NEVER buffer under "P"
-    rc, out = _run(monkeypatch, {"session_id": "P", "hook_event_name": "PreToolUse"})
-    assert rc == 0 and out == ""
+    out = _run(monkeypatch, {"session_id": "P", "hook_event_name": "PreToolUse"})
+    assert out is None
     assert rz.claim_pending(adir, "P", "tok") == []
 
 
@@ -256,13 +244,12 @@ def test_run_no_descriptors_is_noop(tmp_path, monkeypatch):
     (base / "100-200").mkdir(mode=0o700)
     _patch_registry(monkeypatch, base)
     monkeypatch.setenv("TAH_FORWARD_STARTUP_WAIT_S", "0")  # don't wait the startup default
-    rc, out = _run(monkeypatch, {"session_id": "S", "hook_event_name": "SessionStart"})
-    assert rc == 0 and out == ""
+    out = _run(monkeypatch, {"session_id": "S", "hook_event_name": "SessionStart"})
+    assert out is None
 
 
-def test_run_empty_stdin_is_noop(monkeypatch):
-    monkeypatch.setattr("sys.stdin", io.StringIO(""))
-    assert shim.run_from_args(_args()) == 0
+def test_forward_missing_payload_is_noop() -> None:
+    assert shim.forward(None, provider="codex") is None
 
 
 # ---- startup-event wait (SessionStart-before-MCP race) ----
@@ -290,8 +277,8 @@ def test_startup_event_waits_for_late_descriptor(tmp_path, monkeypatch):
     t = threading.Thread(target=_bring_up_server)
     t.start()
     try:
-        rc, out = _run(monkeypatch, {"session_id": "S", "hook_event_name": "SessionStart"})
-        assert rc == 0 and out == "LATE_OK"  # waited for the server, then forwarded
+        out = _run(monkeypatch, {"session_id": "S", "hook_event_name": "SessionStart"})
+        assert out == "LATE_OK"  # waited for the server, then forwarded
     finally:
         t.join()
         if "srv" in holder:
@@ -307,8 +294,8 @@ def test_non_startup_event_does_not_wait(tmp_path, monkeypatch):
     _patch_registry(monkeypatch, base)
     monkeypatch.setenv("TAH_FORWARD_STARTUP_WAIT_S", "5")
     start = time.monotonic()
-    rc, out = _run(monkeypatch, {"session_id": "S", "hook_event_name": "PreToolUse"})
-    assert rc == 0 and out == "" and (time.monotonic() - start) < 1.0  # no wait mid-session
+    out = _run(monkeypatch, {"session_id": "S", "hook_event_name": "PreToolUse"})
+    assert out is None and (time.monotonic() - start) < 1.0  # no wait mid-session
 
 
 def test_startup_wait_zero_disables(tmp_path, monkeypatch):
@@ -320,5 +307,5 @@ def test_startup_wait_zero_disables(tmp_path, monkeypatch):
     _patch_registry(monkeypatch, base)
     monkeypatch.setenv("TAH_FORWARD_STARTUP_WAIT_S", "0")
     start = time.monotonic()
-    rc, out = _run(monkeypatch, {"session_id": "S", "hook_event_name": "SessionStart"})
-    assert rc == 0 and out == "" and (time.monotonic() - start) < 1.0  # disabled
+    out = _run(monkeypatch, {"session_id": "S", "hook_event_name": "SessionStart"})
+    assert out is None and (time.monotonic() - start) < 1.0  # disabled

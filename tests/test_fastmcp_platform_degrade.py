@@ -9,10 +9,7 @@ deletions are no-ops and the same assertions hold natively.
 
 from __future__ import annotations
 
-import argparse
 import asyncio
-import io
-import json
 import logging
 import os
 import socket
@@ -34,13 +31,7 @@ async def _yield(value):
     yield value
 
 
-def _shim_args() -> argparse.Namespace:
-    return argparse.Namespace(
-        provider="codex", server_name="ipi", hookset_name=None, registry_root=None
-    )
-
-
-_EVENT = json.dumps({"session_id": "S", "hook_event_name": "PreToolUse"})
+_EVENT: dict[str, object] = {"session_id": "S", "hook_event_name": "PreToolUse"}
 
 
 def test_supported_false_without_posix_primitives(monkeypatch):
@@ -59,11 +50,19 @@ def test_runtime_base_none_when_unsupported(monkeypatch, tmp_path):
 def test_shim_run_is_noop_when_unsupported(monkeypatch, capsys):
     _simulate_no_posix(monkeypatch)
     # _run (un-suppressed) must return cleanly via the base gate, not raise.
-    monkeypatch.setattr("sys.stdin", io.StringIO(_EVENT))
-    shim._run(_shim_args())
-    # run_from_args pins the fail-open contract (exit 0, empty stdout).
-    monkeypatch.setattr("sys.stdin", io.StringIO(_EVENT))
-    assert shim.run_from_args(_shim_args()) == 0
+    assert (
+        shim._run(
+            _EVENT,
+            provider="codex",
+            server_name="ipi",
+            registry_root=None,
+            startup_wait=None,
+            response_timeout=2,
+        )
+        is None
+    )
+    # The public function pins the fail-open contract (no return, empty stdout).
+    assert shim.forward(_EVENT, provider="codex") is None
     assert capsys.readouterr().out == ""
 
 

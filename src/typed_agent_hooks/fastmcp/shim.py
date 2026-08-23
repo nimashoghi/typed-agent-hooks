@@ -1,11 +1,11 @@
-"""Stdlib-only forward shim: a harness command-hook -> the running bridge.
+"""Fail-open forwarder from one harness command hook to the running bridge.
 
 Reads the hook JSON on stdin, finds the correct running server via the registry
 (:mod:`typed_agent_hooks.fastmcp.rendezvous`), forwards ``{provider, payload}``
 over its unix socket, prints the server's ``stdout``, and **always exits 0**.
 
 Fail-open is the contract: a missing / slow / dead / ambiguous server must never
-block the harness or corrupt routing. Imports **no** ``fastmcp``.
+block the harness or corrupt routing. Imports no ``fastmcp``.
 
 Resolution ladder (see the plan, §2.3):
   (a) EXACT      bound_key == correlation_key (newest live wins) -> forward
@@ -18,7 +18,6 @@ Resolution ladder (see the plan, §2.3):
 
 from __future__ import annotations
 
-import argparse
 import contextlib
 import json
 import math
@@ -26,7 +25,11 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import NamedTuple
+from typing import Annotated, NamedTuple, TypeAlias
+
+from cyclopts import App, Parameter
+
+from typed_agent_hooks.config import ProviderName
 
 from . import rendezvous as rz
 from . import wire
@@ -52,60 +55,9 @@ _STARTUP_WAIT_S = 60.0  # override via $TAH_FORWARD_STARTUP_WAIT_S (0 disables)
 _STARTUP_POLL_SLEEP = 0.1
 
 
-def _nonnegative_seconds(value: str) -> float:
-    seconds = float(value)
-    if not math.isfinite(seconds) or seconds < 0:
-        raise argparse.ArgumentTypeError("must be finite and non-negative")
-    return seconds
-
-
-def _positive_seconds(value: str) -> float:
-    seconds = float(value)
-    if not math.isfinite(seconds) or seconds <= 0:
-        raise argparse.ArgumentTypeError("must be finite and positive")
-    return seconds
-
-
 class _Forward(NamedTuple):
     connected: bool
     out: str | None
-
-
-def add_forward_arguments(parser: argparse.ArgumentParser) -> None:
-    """Wire the ``forward`` arguments (shared by the CLI subcommand + console script)."""
-    parser.add_argument("--provider", required=True, choices=["codex", "claude-code"])
-    parser.add_argument("--server-name", dest="server_name", default="ipi")
-    # carried so the installed command is marker-managed (see hooksets/install.py);
-    # not used for routing.
-    parser.add_argument("--hookset-name", dest="hookset_name", default=None)
-    parser.add_argument("--hookset-collection", dest="hookset_collection", default=None)
-    parser.add_argument("--registry-root", dest="registry_root", default=None)
-    parser.add_argument(
-        "--startup-wait",
-        type=_nonnegative_seconds,
-        default=None,
-        help="seconds to wait for a bridge on startup events (environment/default if omitted)",
-    )
-    parser.add_argument(
-        "--response-timeout",
-        type=_positive_seconds,
-        default=_DEFAULT_RESPONSE_TIMEOUT,
-        help="seconds to wait for the bridge response",
-    )
-
-
-def run_from_args(args: argparse.Namespace) -> int:
-    """Entry point for the ``forward`` subcommand. NEVER raises; always returns 0."""
-    with contextlib.suppress(Exception):
-        _run(args)
-    return 0
-
-
-def main(argv: list[str] | None = None) -> int:
-    """Console-script entry point (``tah-fastmcp-forward``)."""
-    parser = argparse.ArgumentParser(prog="tah-fastmcp-forward")
-    add_forward_arguments(parser)
-    return run_from_args(parser.parse_args(argv))
 
 
 def _read_stdin_event() -> dict | None:
@@ -120,6 +72,79 @@ def _read_stdin_event() -> dict | None:
     except ValueError:
         return None
     return obj if isinstance(obj, dict) else None
+
+
+def _payload_from_token(_type: object, tokens: list[object]) -> dict[str, object] | None:
+    raw = getattr(tokens[0], "value", "")
+    if raw == "-":
+        return _read_stdin_event()
+    try:
+        decoded = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    return decoded if isinstance(decoded, dict) else None
+
+
+Payload: TypeAlias = Annotated[
+    dict[str, object] | None,
+    Parameter(
+        n_tokens=1,
+        converter=_payload_from_token,
+        accepts_keys=False,
+        allow_leading_hyphen=True,
+    ),
+]
+app = App(name="tah-fastmcp-forward", result_action="print_non_none_return_zero")
+
+
+@app.default
+def forward(
+    payload: Payload,
+    *,
+    provider: ProviderName,
+    server_name: str = "ipi",
+    managed_app: str | None = None,
+    registry_root: Path | None = None,
+    startup_wait: float | None = None,
+    response_timeout: float = _DEFAULT_RESPONSE_TIMEOUT,
+) -> str | None:
+    """Forward one provider hook payload to its running local bridge.
+
+    Parameters
+    ----------
+    payload:
+        Provider JSON object, or ``-`` in the CLI to read it from stdin.
+    provider:
+        Provider that emitted the payload.
+    server_name:
+        Running bridge name.
+    managed_app:
+        Stable config ownership marker; it does not affect routing.
+    registry_root:
+        Explicit rendezvous registry root.
+    startup_wait:
+        Seconds to wait for a bridge on startup events.
+    response_timeout:
+        Seconds to wait for the bridge response.
+    """
+
+    del managed_app
+    if startup_wait is not None and (not math.isfinite(startup_wait) or startup_wait < 0):
+        raise ValueError("startup_wait must be finite and non-negative")
+    if not math.isfinite(response_timeout) or response_timeout <= 0:
+        raise ValueError("response_timeout must be finite and positive")
+    if payload is None:
+        return None
+    with contextlib.suppress(Exception):
+        return _run(
+            payload,
+            provider=provider,
+            server_name=server_name,
+            registry_root=registry_root,
+            startup_wait=startup_wait,
+            response_timeout=response_timeout,
+        )
+    return None
 
 
 def _live_descriptors(adir: Path, server_name: str) -> list[dict]:
@@ -238,34 +263,38 @@ def _forward(
     return _Forward(True, None)
 
 
-def _run(args: argparse.Namespace) -> None:
-    provider = args.provider.replace("-", "_")
-    event = _read_stdin_event()
-    if event is None:
-        return
+def _run(
+    event: dict[str, object],
+    *,
+    provider: str,
+    server_name: str,
+    registry_root: Path | None,
+    startup_wait: float | None,
+    response_timeout: float,
+) -> str | None:
     key = wire.correlation_key(provider, event)
 
-    base = rz.runtime_base(explicit=Path(args.registry_root) if args.registry_root else None)
+    base = rz.runtime_base(explicit=registry_root)
     if base is None:
-        return
+        return None
     with contextlib.suppress(Exception):
         rz.sweep_base(base)  # bounded opportunistic GC
     anchor = rz.find_harness_anchor()
     if anchor is None:
-        return
+        return None
     adir = rz.anchor_dir(base, anchor)
 
     if event.get("hook_event_name") in _STARTUP_EVENTS:
         _await_startup_descriptor(
             adir,
-            args.server_name,
-            wait_seconds=getattr(args, "startup_wait", None),
+            server_name,
+            wait_seconds=startup_wait,
         )
 
     for _ in range(_MAX_RESOLVE_ATTEMPTS):
-        descs = _live_descriptors(adir, args.server_name)
+        descs = _live_descriptors(adir, server_name)
         if not descs:
-            return
+            return None
         target = _resolve(descs, key)
         if target is not None:
             result = _forward(
@@ -273,16 +302,10 @@ def _run(args: argparse.Namespace) -> None:
                 key=key or "",
                 provider=provider,
                 payload=event,
-                response_timeout=getattr(
-                    args,
-                    "response_timeout",
-                    _DEFAULT_RESPONSE_TIMEOUT,
-                ),
+                response_timeout=response_timeout,
             )
             if result.connected:
-                if result.out is not None:
-                    sys.stdout.write(result.out)
-                return
+                return result.out
             continue  # connect failed (descriptor pruned) -> re-resolve once
         # ambiguous (>=2 live, no exact match)
         if key is not None and _is_own_identity_event(provider, event):
@@ -290,4 +313,5 @@ def _run(args: argparse.Namespace) -> None:
                 wire.request_frame(key=key, provider=provider, server_nonce="", payload=event)
             )
             rz.enqueue_pending(adir, key, frame)
-        return  # buffered or safe no-op
+        return None  # buffered or safe no-op
+    return None

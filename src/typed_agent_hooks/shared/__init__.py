@@ -10,8 +10,11 @@ from .adapters import (
     try_from_claude_code,
 )
 from .app import HookApp
+from .config import ClaudeCodeOptions, CodexOptions
 
 __all__ = [
+    "ClaudeCodeOptions",
+    "CodexOptions",
     "HookApp",
     "NoSharedMappingError",
     "adapters",

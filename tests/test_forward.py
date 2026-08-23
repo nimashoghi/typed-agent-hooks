@@ -1,4 +1,4 @@
-"""Self-bootstrapping hook commands (uvx + self-spec detection)."""
+"""Immutable bootstrap command for the dedicated forwarding executable."""
 
 from __future__ import annotations
 
@@ -6,8 +6,7 @@ from pathlib import Path
 
 import pytest
 
-import typed_agent_hooks.hooksets.launcher as launcher
-from typed_agent_hooks.hooksets import default_command_prefix, self_install_spec
+from typed_agent_hooks.fastmcp import launcher
 
 
 class _FakeDist:
@@ -24,15 +23,7 @@ def _patch_dist(monkeypatch: pytest.MonkeyPatch, direct_url: str | None) -> None
     )
 
 
-def test_self_install_spec_git(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_dist(
-        monkeypatch,
-        '{"url":"https://github.com/o/r","vcs_info":{"vcs":"git","commit_id":"abc123"}}',
-    )
-    assert self_install_spec() == "git+https://github.com/o/r@abc123"
-
-
-def test_self_install_spec_does_not_embed_http_credentials(
+def test_self_install_spec_uses_exact_git_commit_without_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_dist(
@@ -41,94 +32,34 @@ def test_self_install_spec_does_not_embed_http_credentials(
         '"vcs_info":{"vcs":"git","commit_id":"abc123"}}',
     )
 
-    spec = self_install_spec()
+    spec = launcher.self_install_spec()
 
     assert spec == "git+https://github.com/o/r@abc123"
     assert "secret" not in spec
 
 
-def test_self_install_spec_git_without_commit_falls_back_to_ref(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_dist(
-        monkeypatch,
-        '{"url":"https://github.com/o/r","vcs_info":{"vcs":"git","requested_revision":"main"}}',
-    )
-    assert self_install_spec() == "git+https://github.com/o/r@main"
-
-
-def test_self_install_spec_non_git_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Editable / local installs have a stable interpreter; no uvx needed.
+def test_self_install_spec_ignores_non_git_install(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_dist(monkeypatch, '{"url":"file:///x","dir_info":{"editable":true}}')
-    assert self_install_spec() is None
+    assert launcher.self_install_spec() is None
 
 
-def test_self_install_spec_missing_direct_url_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_dist(monkeypatch, None)
-    assert self_install_spec() is None
-
-
-def test_default_command_prefix_self_bootstraps_git_install(
+def test_forward_command_self_bootstraps_the_dedicated_entry_point(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        launcher,
-        "self_install_spec",
-        lambda: "git+https://github.com/o/r@abc123",
-    )
+    monkeypatch.setattr(launcher, "self_install_spec", lambda: "git+https://github.com/o/r@abc123")
 
-    cmd = default_command_prefix(
-        "shared",
-        python_executable="/ephemeral/python",
-        self_bootstrap=True,
-    )
+    command = launcher.forward_command()
 
-    assert cmd[-4:] == [
+    assert command[-3:] == [
         "--from",
         "git+https://github.com/o/r@abc123",
-        "typed-agent-hooks",
-        "run",
+        "tah-fastmcp-forward",
     ]
-    assert Path(cmd[0]).stem.lower() == "uvx" or cmd[1:3] == ["tool", "run"]
+    assert Path(command[0]).stem.lower() == "uvx" or command[1:3] == ["tool", "run"]
 
 
-def test_self_bootstrap_includes_hookset_dependencies(
+def test_forward_command_uses_current_interpreter_for_local_install(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        launcher,
-        "self_install_spec",
-        lambda: "git+https://github.com/o/r@abc123",
-    )
-
-    cmd = default_command_prefix(
-        "shared",
-        python_executable="/ephemeral/python",
-        self_bootstrap=True,
-        dependencies=["foam-wiki>=0.4.2,<1", "pyyaml>=6"],
-    )
-
-    assert cmd[-8:] == [
-        "--from",
-        "git+https://github.com/o/r@abc123",
-        "--with",
-        "foam-wiki>=0.4.2,<1",
-        "--with",
-        "pyyaml>=6",
-        "typed-agent-hooks",
-        "run",
-    ]
-
-
-def test_explicit_python_disables_self_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        launcher,
-        "self_install_spec",
-        lambda: "git+https://github.com/o/r@abc123",
-    )
-
-    assert default_command_prefix(
-        "fastmcp",
-        python_executable="/stable/python",
-        self_bootstrap=False,
-    ) == ["/stable/python", "-m", "typed_agent_hooks", "forward"]
+    monkeypatch.setattr(launcher, "self_install_spec", lambda: None)
+    assert launcher.forward_command()[1:] == ["-m", "typed_agent_hooks.fastmcp"]

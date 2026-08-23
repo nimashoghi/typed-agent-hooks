@@ -1,4 +1,6 @@
-"""Strict, explicit hook APIs for Codex, Claude Code, and shared semantics."""
+"""Code-first hook APIs for Codex, Claude Code, and shared semantics."""
 
-__all__ = ["claude_code", "codex", "shared"]
-__version__ = "0.0.1"
+from .collection import Collection
+
+__all__ = ["Collection", "claude_code", "codex", "shared"]
+__version__ = "0.1.0"

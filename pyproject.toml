@@ -4,15 +4,15 @@ build-backend = "uv_build"
 
 [project]
 name = "typed-agent-hooks"
-version = "0.0.1"
-description = "Strict Pydantic schemas and managed hooksets for Codex and Claude Code."
+version = "0.1.0"
+description = "Code-first executable hooks and strict schemas for Codex and Claude Code."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [{ name = "Nima Shoghi", email = "nimashoghi@gmail.com" }]
 dependencies = [
+  "cyclopts>=4.23.2,<5",
   "pydantic>=2.8,<3",
-  "tomli>=2; python_version < '3.11'",
 ]
 keywords = ["codex", "claude-code", "hooks", "pydantic", "schemas"]
 classifiers = [
@@ -26,16 +26,15 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-# Server-side FastMCP bridge (HookBridge.attach). The shim/rendezvous/wire
-# submodules are stdlib-only and do NOT require this extra.
+# Server-side FastMCP bridge (HookBridge.attach). The forwarding process does
+# not require this extra.
 fastmcp = ["fastmcp>=3.3,<3.4"]
 
 [project.urls]
 Repository = "https://github.com/nimashoghi/typed-agent-hooks"
 
 [project.scripts]
-typed-agent-hooks = "typed_agent_hooks.cli:main"
-tah-fastmcp-forward = "typed_agent_hooks.fastmcp.shim:main"
+tah-fastmcp-forward = "typed_agent_hooks.fastmcp.shim:app"
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.15", "ty>=0.0.50,<0.1", "fastmcp>=3.3,<3.4"]
