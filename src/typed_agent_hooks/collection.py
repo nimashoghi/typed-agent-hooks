@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from collections.abc import Iterable
+from functools import partial
 from pathlib import Path
 
 from cyclopts import App
+from pydantic_core import to_jsonable_python
 
 from . import claude_code, codex
 from .config import (
@@ -30,7 +33,13 @@ class Collection:
         self.apps = tuple(Path(app).expanduser() for app in apps)
         if not self.apps:
             raise ValueError("collection must contain at least one app")
-        self.cli = App(result_action="print_non_none_return_zero")
+        self.cli = App(
+            result_action=[
+                partial(json.dumps, default=to_jsonable_python, allow_nan=False),
+                print,
+                "return_zero",
+            ]
+        )
         self.cli.command(self.install)
         self.cli.command(self.uninstall)
 

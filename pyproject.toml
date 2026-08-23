@@ -13,6 +13,7 @@ authors = [{ name = "Nima Shoghi", email = "nimashoghi@gmail.com" }]
 dependencies = [
   "cyclopts>=4.23.2,<5",
   "pydantic>=2.8,<3",
+  "pydantic-core",
 ]
 keywords = ["codex", "claude-code", "hooks", "pydantic", "schemas"]
 classifiers = [

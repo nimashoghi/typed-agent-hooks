@@ -74,7 +74,10 @@ def test_collection_rejects_duplicate_app_names(tmp_path: Path) -> None:
         Collection(name="suite", apps=(first, second)).describe()
 
 
-def test_collection_cli_uses_the_public_python_methods(tmp_path: Path) -> None:
+def test_collection_cli_uses_the_public_python_methods(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     collection = Collection(
         name="suite",
         apps=(_app_script(tmp_path / "app.py", name="app", text="context"),),
@@ -83,3 +86,16 @@ def test_collection_cli_uses_the_public_python_methods(tmp_path: Path) -> None:
     command, _, _ = collection.cli.parse_args(["install"])
 
     assert command == collection.install
+
+    assert collection.cli(["install", "--project-root", str(tmp_path)]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output == {
+        "claude_code": {
+            "path": str(tmp_path / ".claude" / "settings.json"),
+            "changed": True,
+        },
+        "codex": {
+            "path": str(tmp_path / ".codex" / "hooks.json"),
+            "changed": True,
+        },
+    }

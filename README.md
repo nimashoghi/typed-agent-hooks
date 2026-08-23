@@ -13,15 +13,21 @@ Put the dependencies in the executable with PEP 723 and define configuration bes
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
+#   "cyclopts>=4.23.2,<5",
+#   "pydantic-core",
 #   "typed-agent-hooks @ git+https://github.com/nimashoghi/typed-agent-hooks.git@main",
 # ]
 # ///
 """Add local project context to every submitted prompt."""
 
+import json
+from functools import partial
+
 from cyclopts import App
+from pydantic_core import to_jsonable_python
 from typed_agent_hooks import shared
 
-cli = App(result_action="print_non_none_return_zero")
+cli = App(result_action=[partial(json.dumps, default=to_jsonable_python, allow_nan=False), print, "return_zero"])
 hooks = shared.HookApp(name="project-context")
 
 
