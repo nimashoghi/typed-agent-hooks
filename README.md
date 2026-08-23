@@ -9,11 +9,11 @@ The package provides strict provider wire models, a conservative shared semantic
 Put the dependencies in the executable with PEP 723 and define configuration beside the handler:
 
 ```python
-#!/usr/bin/env -S uv run --isolated --script
+#!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
-#   "typed-agent-hooks @ git+https://github.com/nimashoghi/typed-agent-hooks.git@<commit>",
+#   "typed-agent-hooks @ git+https://github.com/nimashoghi/typed-agent-hooks.git@main",
 # ]
 # ///
 """Add local project context to every submitted prompt."""
@@ -98,11 +98,11 @@ Installation replaces only commands marked with the app's stable name, preserves
 Use a small executable installer when several hooks have independent dependencies or ownership:
 
 ```python
-#!/usr/bin/env -S uv run --isolated --script
+#!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
-#   "typed-agent-hooks @ git+https://github.com/nimashoghi/typed-agent-hooks.git@<commit>",
+#   "typed-agent-hooks @ git+https://github.com/nimashoghi/typed-agent-hooks.git@main",
 # ]
 # ///
 """Install this repository's hooks in deterministic order."""
