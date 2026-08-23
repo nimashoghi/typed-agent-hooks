@@ -1,4 +1,4 @@
-"""Immutable bootstrap command for the dedicated forwarding executable."""
+"""Bootstrap command for the dedicated forwarding executable."""
 
 from __future__ import annotations
 
@@ -23,19 +23,30 @@ def _patch_dist(monkeypatch: pytest.MonkeyPatch, direct_url: str | None) -> None
     )
 
 
-def test_self_install_spec_uses_exact_git_commit_without_credentials(
+def test_self_install_spec_preserves_requested_revision_without_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_dist(
         monkeypatch,
         '{"url":"https://x-access-token:secret@github.com/o/r",'
-        '"vcs_info":{"vcs":"git","commit_id":"abc123"}}',
+        '"vcs_info":{"vcs":"git","requested_revision":"main","commit_id":"abc123"}}',
     )
 
     spec = launcher.self_install_spec()
 
-    assert spec == "git+https://github.com/o/r@abc123"
+    assert spec == "git+https://github.com/o/r@main"
     assert "secret" not in spec
+
+
+def test_self_install_spec_falls_back_to_exact_git_commit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_dist(
+        monkeypatch,
+        '{"url":"https://github.com/o/r","vcs_info":{"vcs":"git","commit_id":"abc123"}}',
+    )
+
+    assert launcher.self_install_spec() == "git+https://github.com/o/r@abc123"
 
 
 def test_self_install_spec_ignores_non_git_install(monkeypatch: pytest.MonkeyPatch) -> None:

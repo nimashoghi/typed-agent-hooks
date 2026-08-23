@@ -94,7 +94,22 @@ Payload: TypeAlias = Annotated[
         allow_leading_hyphen=True,
     ),
 ]
-app = App(name="tah-fastmcp-forward", result_action="print_non_none_return_zero")
+
+
+def _write_forward_result(result: object) -> int:
+    """Write provider output verbatim instead of rendering it through Rich."""
+
+    if result is None:
+        return 0
+    if not isinstance(result, str):
+        raise TypeError(f"forward result must be str or None, got {type(result).__name__}")
+    sys.stdout.write(result)
+    if not result.endswith("\n"):
+        sys.stdout.write("\n")
+    return 0
+
+
+app = App(name="tah-fastmcp-forward", result_action=_write_forward_result)
 
 
 @app.default
