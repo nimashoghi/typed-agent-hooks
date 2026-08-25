@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
-import sys
 import tempfile
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
@@ -28,7 +27,7 @@ from typed_agent_hooks.fastmcp import rendezvous as rz  # noqa: E402
 from typed_agent_hooks.fastmcp import wire  # noqa: E402
 
 pytestmark = pytest.mark.skipif(
-    sys.platform != "linux", reason="rendezvous is Linux-only (/proc + AF_UNIX + 0700 modes)"
+    not rz.supported(), reason="the FastMCP bridge requires POSIX ownership and AF_UNIX"
 )
 
 # A valid Codex SessionStart payload (mirrors tests/fixtures/codex_inputs.json).
@@ -40,6 +39,16 @@ SESSION_START = {
     "model": "gpt-5",
     "permission_mode": "default",
     "source": "startup",
+}
+USER_PROMPT = {
+    "session_id": "s",
+    "transcript_path": None,
+    "cwd": "/repo",
+    "hook_event_name": "UserPromptSubmit",
+    "model": "gpt-5",
+    "permission_mode": "default",
+    "turn_id": "t",
+    "prompt": "first prompt",
 }
 _ANCHOR = (100, 200)
 
@@ -70,7 +79,7 @@ def _app_returning(text, *, record=None):
     class App:
         def handle_json(self, payload):
             if record is not None:
-                record.append(payload["session_id"])
+                record.append(payload["hook_event_name"])
             return text
 
     return App()
@@ -138,9 +147,7 @@ def test_threadid_bind_and_drain(short_base, monkeypatch):
             adir = short_base / "100-200"
             assert rz.list_descriptors(adir)[0]["bound_key"] is None  # codex: unbound at start
             frame = wire.encode_frame(
-                wire.request_frame(
-                    key="T", provider="codex", server_nonce="", payload=SESSION_START
-                )
+                wire.request_frame(key="T", provider="codex", server_nonce="", payload=USER_PROMPT)
             )
             assert rz.enqueue_pending(adir, "T", frame)
             bridge._maybe_bind("T")
@@ -149,7 +156,7 @@ def test_threadid_bind_and_drain(short_base, monkeypatch):
             await asyncio.sleep(0.2)  # let the drained dispatch run
 
     asyncio.run(body())
-    assert ran == ["s"]  # the buffered SessionStart was dispatched on bind
+    assert ran == ["UserPromptSubmit"]  # the buffered prompt was dispatched on bind
 
 
 def test_rejects_wrong_nonce(short_base, monkeypatch):

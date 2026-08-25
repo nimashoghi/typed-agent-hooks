@@ -11,9 +11,11 @@ Resolution ladder (see the plan, §2.3):
   (a) EXACT      bound_key == correlation_key (newest live wins) -> forward
   (b) SINGLE     exactly one live descriptor -> forward
   (c) UNROUTABLE >=2 live, no exact match:
-        - own-identity event (codex Subagent{Start,Stop}) -> buffer-and-resolve
+        - identity event -> buffer-and-resolve
         - otherwise (ambiguous codex tool event) -> safe no-op
-  (d) NONE       -> fail-open
+  (d) NONE:
+        - identity event -> buffer-and-resolve
+        - otherwise -> fail-open
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ import math
 import os
 import sys
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated, NamedTuple, TypeAlias
 
@@ -39,6 +42,11 @@ from . import wire
 # later binds it. (Tool events lack agent_id -> their key is the parent session_id
 # -> they must NOT be buffered/guessed; they safe-no-op.)
 _OWN_IDENTITY_EVENTS = frozenset({"SubagentStart", "SubagentStop"})
+
+# These events carry the top-level session's own identity for both providers.
+# Buffering preserves observer side effects when the event races ahead of the
+# bridge; synchronous hook output is already unavailable when there is no route.
+_SESSION_IDENTITY_EVENTS = frozenset({"UserPromptSubmit"})
 
 _CONNECT_RETRIES = 5
 _CONNECT_RETRY_SLEEP = 0.05  # listener-start race window
@@ -207,7 +215,7 @@ def _await_startup_descriptor(
             return
 
 
-def _is_own_identity_event(provider: str, event: dict) -> bool:
+def _is_own_identity_event(provider: str, event: Mapping[str, object]) -> bool:
     if provider != "codex":
         return False
     agent_id = event.get("agent_id")
@@ -216,6 +224,25 @@ def _is_own_identity_event(provider: str, event: dict) -> bool:
         and bool(agent_id)
         and event.get("hook_event_name") in _OWN_IDENTITY_EVENTS
     )
+
+
+def _is_bufferable_event(provider: str, event: Mapping[str, object]) -> bool:
+    event_name = event.get("hook_event_name")
+    if event_name in _SESSION_IDENTITY_EVENTS:
+        session_id = event.get("session_id")
+        return (
+            provider in {"codex", "claude_code"}
+            and isinstance(session_id, str)
+            and bool(session_id)
+        )
+    return _is_own_identity_event(provider, event)
+
+
+def _buffer_event(adir: Path, key: str, provider: str, event: dict[str, object]) -> None:
+    frame = wire.encode_frame(
+        wire.request_frame(key=key, provider=provider, server_nonce="", payload=event)
+    )
+    rz.enqueue_pending(adir, key, frame)
 
 
 def _resolve(descs: list[dict], key: str | None) -> dict | None:
@@ -309,6 +336,8 @@ def _run(
     for _ in range(_MAX_RESOLVE_ATTEMPTS):
         descs = _live_descriptors(adir, server_name)
         if not descs:
+            if key is not None and _is_bufferable_event(provider, event):
+                _buffer_event(adir, key, provider, event)
             return None
         target = _resolve(descs, key)
         if target is not None:
@@ -323,10 +352,7 @@ def _run(
                 return result.out
             continue  # connect failed (descriptor pruned) -> re-resolve once
         # ambiguous (>=2 live, no exact match)
-        if key is not None and _is_own_identity_event(provider, event):
-            frame = wire.encode_frame(
-                wire.request_frame(key=key, provider=provider, server_nonce="", payload=event)
-            )
-            rz.enqueue_pending(adir, key, frame)
+        if key is not None and _is_bufferable_event(provider, event):
+            _buffer_event(adir, key, provider, event)
         return None  # buffered or safe no-op
     return None
