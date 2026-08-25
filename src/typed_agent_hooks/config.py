@@ -222,9 +222,7 @@ def merge_collection_config(
 ) -> dict[str, object]:
     """Replace an ordered collection while preserving unrelated config."""
 
-    merged, insertion_points = _remove_managed_groups(
-        existing, collection_names={collection_name}
-    )
+    merged, insertion_points = _remove_managed_groups(existing, collection_names={collection_name})
     for config in generated:
         _insert_generated_config(merged, config, insertion_points)
     return merged
