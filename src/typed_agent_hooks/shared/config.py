@@ -1,13 +1,17 @@
 """Code-first provider registration metadata for shared semantic hooks."""
 
-from typing import Annotated
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Annotated
 
 from pydantic import Field
 
-from typed_agent_hooks import claude_code, codex
 from typed_agent_hooks.core import StrictModel
 
 from .events import SharedEventName
+
+if TYPE_CHECKING:
+    from typed_agent_hooks import claude_code, codex
 
 PositiveSeconds = Annotated[int, Field(gt=0)]
 

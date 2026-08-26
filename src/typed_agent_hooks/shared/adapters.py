@@ -1,6 +1,9 @@
 """Explicit provider-to-shared event adapters."""
 
-from typed_agent_hooks import claude_code, codex
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from typed_agent_hooks.core import JsonInput, Provider
 
 from .events import (
@@ -19,12 +22,17 @@ from .events import (
     TurnStopped,
 )
 
+if TYPE_CHECKING:
+    from typed_agent_hooks import claude_code, codex
+
 
 class NoSharedMappingError(ValueError):
     """Raised when a provider-only event has no shared semantic mapping."""
 
 
 def _codex_context(event: codex.events.AnyInput) -> EventContext:
+    from typed_agent_hooks import codex
+
     if isinstance(
         event,
         (
@@ -55,6 +63,8 @@ def _codex_context(event: codex.events.AnyInput) -> EventContext:
 
 
 def _claude_context(event: claude_code.events.AnyInput) -> EventContext:
+    from typed_agent_hooks import claude_code
+
     model = event.model if isinstance(event, claude_code.events.SessionStartInput) else None
     return EventContext(
         provider=Provider.CLAUDE_CODE,
@@ -71,6 +81,8 @@ def _claude_context(event: claude_code.events.AnyInput) -> EventContext:
 
 def from_codex(event: codex.events.AnyInput) -> AnyEvent:
     """Map a Codex wire event into its shared semantic event."""
+
+    from typed_agent_hooks import codex
 
     context = _codex_context(event)
     match event:
@@ -135,6 +147,8 @@ def from_codex(event: codex.events.AnyInput) -> AnyEvent:
 
 def try_from_claude_code(event: claude_code.events.AnyInput) -> AnyEvent | None:
     """Return a shared event, or ``None`` for a Claude Code-only event."""
+
+    from typed_agent_hooks import claude_code
 
     context = _claude_context(event)
     match event:
@@ -226,10 +240,14 @@ def from_claude_code(event: claude_code.events.AnyInput) -> AnyEvent:
 def parse_codex(data: JsonInput) -> AnyEvent:
     """Parse Codex input and map it into shared mode."""
 
+    from typed_agent_hooks import codex
+
     return from_codex(codex.parse_input(data))
 
 
 def parse_claude_code(data: JsonInput) -> AnyEvent:
     """Parse Claude Code input and require a shared mapping."""
+
+    from typed_agent_hooks import claude_code
 
     return from_claude_code(claude_code.parse_input(data))

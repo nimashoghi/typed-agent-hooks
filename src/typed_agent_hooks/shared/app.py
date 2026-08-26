@@ -9,9 +9,8 @@ import sys
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, TypeVar, cast
+from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
-from typed_agent_hooks import claude_code, codex
 from typed_agent_hooks.config import (
     ALL_PROVIDERS,
     ConfigChange,
@@ -31,6 +30,9 @@ from .adapters import from_claude_code, from_codex
 from .config import SHARED_TO_CLAUDE_CODE, SHARED_TO_CODEX, ClaudeCodeOptions, CodexOptions
 from .events import EVENT_NAME_BY_TYPE, BaseEvent, SharedEventName
 from .outputs import Result, to_claude_code_output, to_codex_output
+
+if TYPE_CHECKING:
+    from typed_agent_hooks import claude_code, codex
 
 EventT = TypeVar("EventT", bound=BaseEvent)
 
@@ -165,6 +167,8 @@ class HookApp:
     def handle_codex_event(self, wire_event: codex.events.AnyInput) -> str | None:
         """Map, dispatch, and render one Codex event."""
 
+        from typed_agent_hooks import codex
+
         event = from_codex(wire_event)
         result = self._registry.call(event.event_name, event)
         return codex.render_output(
@@ -174,6 +178,8 @@ class HookApp:
 
     def handle_claude_code_event(self, wire_event: claude_code.events.AnyInput) -> str | None:
         """Map, dispatch, and render one Claude Code event."""
+
+        from typed_agent_hooks import claude_code
 
         event = from_claude_code(wire_event)
         result = self._registry.call(event.event_name, event)
@@ -189,7 +195,11 @@ class HookApp:
         if provider_name not in self.providers:
             raise ValueError(f"app {self.name!r} does not enable {provider_name}")
         if provider is Provider.CODEX:
+            from typed_agent_hooks import codex
+
             return self.handle_codex_event(codex.parse_input(data))
+        from typed_agent_hooks import claude_code
+
         return self.handle_claude_code_event(claude_code.parse_input(data))
 
     def render(
@@ -218,6 +228,8 @@ class HookApp:
         )
 
         if provider == "codex":
+            from typed_agent_hooks import codex
+
             hooks: dict[codex.events.CodexEventName, list[codex.config.HookGroup]] = {}
             for registration in self.registrations:
                 event = SHARED_TO_CODEX.get(registration.event_name)
@@ -242,6 +254,8 @@ class HookApp:
                     codex.config.HookGroup(matcher=options.matcher, hooks=[command])
                 )
             return config_dict(codex.config.HooksFile(hooks=hooks))
+
+        from typed_agent_hooks import claude_code
 
         claude_hooks: dict[
             claude_code.events.ClaudeEventName, list[claude_code.config.HookGroup]
