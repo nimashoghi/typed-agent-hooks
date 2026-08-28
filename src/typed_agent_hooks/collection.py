@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from collections.abc import Iterable
 from functools import partial
 from pathlib import Path
@@ -56,14 +57,17 @@ class Collection:
             seen_paths.add(path)
             if not path.is_file():
                 raise FileNotFoundError(path)
+            command = [
+                str(path),
+                INTERNAL_COMMAND,
+                "describe",
+                COLLECTION_MARKER,
+                self.name,
+            ]
+            if sys.platform == "win32":
+                command = ["uv", "run", "--script", *command]
             completed = subprocess.run(
-                [
-                    str(path),
-                    INTERNAL_COMMAND,
-                    "describe",
-                    COLLECTION_MARKER,
-                    self.name,
-                ],
+                command,
                 check=False,
                 capture_output=True,
                 text=True,
