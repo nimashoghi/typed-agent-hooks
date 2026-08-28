@@ -15,7 +15,7 @@ Put the dependencies in the executable with PEP 723 and define configuration bes
 # dependencies = [
 #   "cyclopts>=4.23.2,<5",
 #   "pydantic-core",
-#   "typed-agent-hooks @ git+https://github.com/nimashoghi/typed-agent-hooks.git@main",
+#   "typed-agent-hooks==0.1.0",
 # ]
 # ///
 """Add local project context to every submitted prompt."""
@@ -49,7 +49,7 @@ if __name__ == "__main__":
     hooks.main(cli)
 ```
 
-Create and commit the adjacent script lockfile with `uv lock --script project_context.py`. Keep `@main` in the PEP 723 declaration and refresh the lock when intentionally updating TAH; ordinary hook invocations then reuse the resolved installation.
+Create and commit the adjacent script lockfile with `uv lock --script project_context.py`. Pin the desired TAH release in the PEP 723 declaration and refresh the lock when intentionally updating it; ordinary hook invocations then reuse the resolved installation.
 
 Make the file executable and run its ordinary domain CLI directly:
 
@@ -110,7 +110,7 @@ Use a small executable installer when several hooks have independent dependencie
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
-#   "typed-agent-hooks @ git+https://github.com/nimashoghi/typed-agent-hooks.git@main",
+#   "typed-agent-hooks==0.1.0",
 # ]
 # ///
 """Install this repository's hooks in deterministic order."""

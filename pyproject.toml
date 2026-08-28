@@ -9,6 +9,7 @@ description = "Code-first executable hooks and strict schemas for Codex and Clau
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Nima Shoghi", email = "nimashoghi@gmail.com" }]
 dependencies = [
   "cyclopts>=4.23.2,<5",
