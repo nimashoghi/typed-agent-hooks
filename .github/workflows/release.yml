@@ -54,7 +54,8 @@ jobs:
   publish:
     name: Publish to PyPI
     needs: build
-    runs-on: [self-hosted, Linux, X64]
+    # This action's supported environment is a GitHub-provided Ubuntu VM.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
       name: pypi
