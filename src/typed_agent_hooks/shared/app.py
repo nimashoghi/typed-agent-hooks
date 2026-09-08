@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import os
 import shlex
 import sys
@@ -248,7 +249,11 @@ class HookApp:
                         if options.status_message is not None
                         else registration.status_message
                     ),
-                    command_windows=options.command_windows,
+                    command_windows=(
+                        options.command_windows
+                        if options.command_windows is not None
+                        else _windows_command(tokens)
+                    ),
                 )
                 hooks.setdefault(event, []).append(
                     codex.config.HookGroup(matcher=options.matcher, hooks=[command])
@@ -416,3 +421,17 @@ class HookApp:
         parser.add_argument("--scope", choices=("project", "user"), default="project")
         parser.add_argument("--project-root", default=".")
         parser.add_argument("--path")
+
+
+def _windows_command(tokens: list[str]) -> str:
+    """Render a shell-independent Windows launch through encoded PowerShell.
+
+    Codex can dispatch command_windows through CMD or an explicitly selected
+    shell. The outer command contains no shell-sensitive path or argument text.
+    PowerShell receives literal tokens, including spaces, percent signs, and
+    apostrophes, rather than attempting POSIX quoting under CMD.
+    """
+    quoted = ["'" + token.replace("'", "''") + "'" for token in tokens]
+    script = "$ErrorActionPreference = 'Stop'; & " + " ".join(quoted) + "; exit $LASTEXITCODE"
+    encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
+    return "powershell.exe -NoProfile -NonInteractive -EncodedCommand " + encoded

@@ -189,3 +189,9 @@ uv run ruff check .
 uv run ty check
 uv run pytest -q
 ```
+
+## Windows shared hook commands
+
+Shared Codex hooks now include a default `commandWindows` that launches Windows PowerShell with a UTF-16LE encoded command. Executable and argument tokens are quoted as PowerShell literals, preserving paths containing spaces, apostrophes, and shell metacharacters; the wrapper forwards the child exit status. An explicitly supplied `command_windows` still overrides this default. Claude Code continues to use its direct `command`/`args` form.
+
+The outer command is usable from Codex's default CMD launcher and an explicitly selected PowerShell launcher. Native execution is covered by `tests/test_windows_command.py`; that test skips on other platforms. Provider behavior was inspected in Codex commit `0337192dfd10e12ac633dcd159fa6d6120dbfe11`, `codex-rs/hooks/src/engine/command_runner.rs` and `codex-rs/core/src/shell.rs`. PowerShell encoding follows [Microsoft's powershell.exe documentation](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_powershell_exe?view=powershell-5.1).
