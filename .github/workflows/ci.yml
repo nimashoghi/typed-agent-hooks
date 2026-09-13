@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
 
+env:
+  FASTMCP_MCP_CAMELCASE_COMPAT: "false"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

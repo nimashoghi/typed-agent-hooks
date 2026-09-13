@@ -176,7 +176,7 @@ output = forward(payload, provider="codex", server_name="ipi")
 
 `-` means stdin only at the CLI boundary. The forwarder is fail-open: an absent, slow, dead, unsupported, or ambiguous local bridge returns no output and does not block the harness. Invalid explicit timeout arguments still fail before forwarding.
 
-The bridge requires the `fastmcp` extra. The forwarding subprocess itself imports Cyclopts and the small TAH rendezvous modules, but does not import FastMCP.
+The bridge requires the `fastmcp` extra, which now targets FastMCP 4 and MCP SDK 2. It reads Codex thread metadata from the request mapping. The forwarding subprocess itself imports Cyclopts and the small TAH rendezvous modules, but does not import FastMCP.
 
 ## Provider schemas
 

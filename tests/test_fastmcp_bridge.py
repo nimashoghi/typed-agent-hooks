@@ -20,7 +20,7 @@ import pytest
 
 pytest.importorskip("fastmcp")
 
-from fastmcp import FastMCP  # noqa: E402
+from fastmcp import Client, FastMCP  # noqa: E402
 
 from typed_agent_hooks.fastmcp import bridge as B  # noqa: E402
 from typed_agent_hooks.fastmcp import rendezvous as rz  # noqa: E402
@@ -135,24 +135,34 @@ def test_lifespan_wrap_yields_through_serves_and_cleans_up(short_base, monkeypat
     assert not Path(state["sock"]).exists()
 
 
-def test_threadid_bind_and_drain(short_base, monkeypatch):
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+def test_threadid_bind_and_drain(short_base, monkeypatch, mode):
     _patch_registry(monkeypatch, short_base)
     ran: list[str] = []
 
     server = FastMCP("t", lifespan=lambda s: _yield(None))
-    bridge = B.attach(server, _app_returning("x", record=ran), provider="codex", server_name="ipi")
+    B.attach(server, _app_returning("x", record=ran), provider="codex", server_name="ipi")
+
+    @server.tool()
+    def ping() -> str:
+        return "ok"
 
     async def body():
-        async with server._lifespan(server):
+        async with Client(server, mode=mode) as client:
             adir = short_base / "100-200"
             assert rz.list_descriptors(adir)[0]["bound_key"] is None  # codex: unbound at start
             frame = wire.encode_frame(
                 wire.request_frame(key="T", provider="codex", server_nonce="", payload=USER_PROMPT)
             )
             assert rz.enqueue_pending(adir, "T", frame)
-            bridge._maybe_bind("T")
+            for meta in (None, {}, {"threadId": 7}):
+                await client.call_tool("ping", {}, meta=meta)
+                assert rz.list_descriptors(adir)[0]["bound_key"] is None
+            await client.call_tool("ping", {}, meta={"threadId": "T"})
             d2 = rz.list_descriptors(adir)[0]
             assert d2["bound_key"] == "T" and d2["generation"] >= 2  # rebound atomically
+            await client.call_tool("ping", {}, meta={"threadId": "other-thread"})
+            assert rz.list_descriptors(adir)[0]["bound_key"] == "T"
             await asyncio.sleep(0.2)  # let the drained dispatch run
 
     asyncio.run(body())

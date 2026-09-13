@@ -31,15 +31,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+from fastmcp.server.middleware import Middleware
+
 from typed_agent_hooks.core import Provider
 
 from . import rendezvous as rz
 from . import wire
-
-try:  # the [fastmcp] extra
-    from fastmcp.server.middleware import Middleware
-except Exception:  # pragma: no cover
-    from fastmcp.server.middleware.middleware import Middleware
 
 _DISPATCH_TIMEOUT = 30.0  # a slow/blocked handler returns no-op rather than hanging
 _PROVIDERS = ("codex", "claude_code", "shared")
@@ -59,7 +56,7 @@ class _ThreadIdCapture(Middleware):
             fctx = getattr(context, "fastmcp_context", None)
             rc = getattr(fctx, "request_context", None) if fctx is not None else None
             meta = getattr(rc, "meta", None) if rc is not None else None
-            tid = getattr(meta, "threadId", None) if meta is not None else None
+            tid = meta.get("threadId") if meta is not None else None
             if isinstance(tid, str) and tid:
                 self._bridge._maybe_bind(tid)
         return await call_next(context)
