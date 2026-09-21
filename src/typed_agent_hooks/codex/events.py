@@ -21,7 +21,7 @@ CodexEventName: TypeAlias = Literal[
 PermissionMode: TypeAlias = Literal[
     "default", "acceptEdits", "plan", "dontAsk", "bypassPermissions"
 ]
-StartSource: TypeAlias = Literal["startup", "resume", "clear", "compact"]
+StartSource: TypeAlias = Literal["startup", "resume", "clear", "compact", "fork"]
 CompactTrigger: TypeAlias = Literal["manual", "auto"]
 
 
