@@ -116,6 +116,29 @@ def test_shared_app_requires_explicit_provider_at_runtime() -> None:
     )
 
 
+@pytest.mark.parametrize("source", ["startup", "resume", "clear", "compact", "fork"])
+def test_codex_session_start_source_reaches_shared_handler(source: str) -> None:
+    from typed_agent_hooks.core import Provider
+
+    app = shared.HookApp(name="session-source")
+
+    @app.on(shared.events.SessionStarted)
+    def add_context(event: shared.events.SessionStarted) -> shared.outputs.Result:
+        return shared.outputs.AddContext(text=f"Session source: {event.source}")
+
+    payload = _payload("codex_inputs.json", "SessionStart") | {"source": source}
+
+    rendered = app.handle_json(Provider.CODEX, payload)
+
+    assert rendered is not None
+    assert json.loads(rendered) == {
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": f"Session source: {source}",
+        }
+    }
+
+
 def test_shared_permission_decisions_render_for_both_providers() -> None:
     codex_event = shared.from_codex(
         codex.parse_input(_payload("codex_inputs.json", "PermissionRequest"))

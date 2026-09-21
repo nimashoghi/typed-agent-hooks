@@ -48,7 +48,7 @@ class BaseEvent(StrictModel):
 
 class SessionStarted(BaseEvent):
     event_name: Literal["SessionStarted"] = "SessionStarted"
-    source: Literal["startup", "resume", "clear", "compact"]
+    source: Literal["startup", "resume", "clear", "compact", "fork"]
     session_title: str | None = None
 
 
