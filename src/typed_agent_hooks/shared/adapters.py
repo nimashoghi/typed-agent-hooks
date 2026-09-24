@@ -76,6 +76,7 @@ def _claude_context(event: claude_code.events.AnyInput) -> EventContext:
         permission_mode=event.permission_mode,
         agent_id=event.agent_id,
         agent_type=event.agent_type,
+        prompt_id=event.prompt_id,
     )
 
 

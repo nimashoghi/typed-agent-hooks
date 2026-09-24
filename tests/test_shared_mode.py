@@ -66,6 +66,14 @@ def test_claude_failure_maps_to_tool_call_failed() -> None:
     assert event.duration_ms == 18
 
 
+@pytest.mark.parametrize("event_name", ["UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"])
+def test_claude_prompt_identity_is_preserved_without_inventing_a_turn(event_name: str) -> None:
+    payload = {**_payload("claude_code_inputs.json", event_name), "prompt_id": "native-prompt"}
+    event = shared.from_claude_code(claude_code.parse_input(payload))
+    assert event.context.prompt_id == "native-prompt"
+    assert getattr(event, "turn_id", None) is None
+
+
 def test_shared_output_intent_is_checked_against_the_semantic_event() -> None:
     wire_event = claude_code.parse_input(_payload("claude_code_inputs.json", "PermissionRequest"))
     event = shared.from_claude_code(wire_event)

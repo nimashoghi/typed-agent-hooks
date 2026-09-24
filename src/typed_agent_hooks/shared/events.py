@@ -38,6 +38,8 @@ class EventContext(StrictModel):
     # thread. Both providers stamp these on subagent-scoped tool events.
     agent_id: str | None = None
     agent_type: str | None = None
+    # Claude's native prompt identity is distinct from its display turn ID.
+    prompt_id: str | None = None
 
 
 class BaseEvent(StrictModel):
