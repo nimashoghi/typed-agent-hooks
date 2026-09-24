@@ -74,6 +74,17 @@ def test_claude_prompt_identity_is_preserved_without_inventing_a_turn(event_name
     assert getattr(event, "turn_id", None) is None
 
 
+@pytest.mark.parametrize(
+    "event_name", ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"]
+)
+def test_native_scratchpad_reaches_shared_context(event_name: str) -> None:
+    payload = _payload("claude_code_inputs.json", event_name) | {
+        "scratchpad_dir": "/tmp/native/scratchpad"
+    }
+    event = shared.from_claude_code(claude_code.parse_input(payload))
+    assert event.context.scratchpad_dir == "/tmp/native/scratchpad"
+
+
 def test_shared_output_intent_is_checked_against_the_semantic_event() -> None:
     wire_event = claude_code.parse_input(_payload("claude_code_inputs.json", "PermissionRequest"))
     event = shared.from_claude_code(wire_event)

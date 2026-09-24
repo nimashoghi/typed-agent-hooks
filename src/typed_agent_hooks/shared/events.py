@@ -40,6 +40,7 @@ class EventContext(StrictModel):
     agent_type: str | None = None
     # Claude's native prompt identity is distinct from its display turn ID.
     prompt_id: str | None = None
+    scratchpad_dir: str | None = None
 
 
 class BaseEvent(StrictModel):

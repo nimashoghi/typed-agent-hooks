@@ -77,6 +77,7 @@ def _claude_context(event: claude_code.events.AnyInput) -> EventContext:
         agent_id=event.agent_id,
         agent_type=event.agent_type,
         prompt_id=event.prompt_id,
+        scratchpad_dir=event.scratchpad_dir,
     )
 
 

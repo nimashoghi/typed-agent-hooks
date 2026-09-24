@@ -93,6 +93,7 @@ class BaseInput(InputModel):
     cwd: str
     hook_event_name: ClaudeEventName
     prompt_id: str | None = None
+    scratchpad_dir: str | None = None
     permission_mode: PermissionMode | None = None
     effort: Effort | None = None
     agent_id: str | None = None
