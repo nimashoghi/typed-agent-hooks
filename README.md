@@ -27,7 +27,13 @@ from cyclopts import App
 from pydantic_core import to_jsonable_python
 from typed_agent_hooks import shared
 
-cli = App(result_action=[partial(json.dumps, default=to_jsonable_python, allow_nan=False), print, "return_zero"])
+cli = App(
+    result_action=[
+        partial(json.dumps, default=to_jsonable_python, allow_nan=False),
+        print,
+        "return_zero",
+    ]
+)
 hooks = shared.HookApp(name="project-context")
 
 
@@ -81,8 +87,7 @@ Keep docstrings on public functions. Cyclopts uses them for CLI help, and notebo
     codex=shared.CodexOptions(matcher="Bash"),
     claude_code=shared.ClaudeCodeOptions(matcher="Bash|Read"),
 )
-def check_tool(event: shared.events.ToolCallProposed) -> shared.outputs.Result:
-    ...
+def check_tool(event: shared.events.ToolCallProposed) -> shared.outputs.Result: ...
 ```
 
 An app declares its enabled providers when necessary:
@@ -195,3 +200,9 @@ uv run pytest -q
 Shared Codex hooks now include a default `commandWindows` that launches Windows PowerShell with a UTF-16LE encoded command. Executable and argument tokens are quoted as PowerShell literals, preserving paths containing spaces, apostrophes, and shell metacharacters; the wrapper forwards the child exit status. An explicitly supplied `command_windows` still overrides this default. Claude Code continues to use its direct `command`/`args` form.
 
 The outer command is usable from Codex's default CMD launcher and an explicitly selected PowerShell launcher. Native execution is covered by `tests/test_windows_command.py`; that test skips on other platforms. Provider behavior was inspected in Codex commit `0337192dfd10e12ac633dcd159fa6d6120dbfe11`, `codex-rs/hooks/src/engine/command_runner.rs` and `codex-rs/core/src/shell.rs`. PowerShell encoding follows [Microsoft's powershell.exe documentation](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_powershell_exe?view=powershell-5.1).
+
+## Asynchronous Codex startup forwarding
+
+`ForwardingHooks(..., codex_async_events=("SessionStart", "SubagentStart"), startup_wait=300)` renders those Codex command hooks with native `"async": true`. Other events and Claude rendering retain their existing behavior. Keep a positive startup wait so the background forwarder can reach a bridge that is still starting. Native Codex delivers completed asynchronous context at a later context boundary; it cannot change a model request already sent.
+
+The pending prompt queue creates every rendezvous directory with the same ownership and mode required by the bridge. This allows the first prompt to arrive before the MCP server without preventing that server from starting.

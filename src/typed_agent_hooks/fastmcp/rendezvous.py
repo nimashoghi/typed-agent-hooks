@@ -375,11 +375,9 @@ def pending_key_dir(anchor: Path, key: str) -> Path:
 def enqueue_pending(anchor: Path, key: str, frame: bytes, *, cap: int = 64) -> bool:
     """Buffer one framed request for ``key`` (size-capped, dropping when full)."""
     d = pending_key_dir(anchor, key)
-    try:
-        d.mkdir(parents=True, exist_ok=True)
-        os.chmod(d.parent, _DIR_MODE)
-        os.chmod(d, _DIR_MODE)
-    except OSError:
+    # Prompt submission can precede server startup. Every directory must have
+    # the same ownership/mode the bridge requires, including the anchor itself.
+    if not all(_ensure_secure_dir(path) for path in (anchor, d.parent, d)):
         return False
     try:
         if sum(1 for n in os.listdir(d) if n.endswith(".req")) >= cap:

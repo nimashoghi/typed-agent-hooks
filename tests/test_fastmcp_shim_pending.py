@@ -63,6 +63,9 @@ def test_user_prompt_without_descriptor_waits_for_bridge(
 
     _run(event, provider=provider)
 
+    # The subsequently starting bridge must accept the directory created by
+    # this first prompt. A default-mode parent makes the bridge refuse startup.
+    assert rz.ensure_anchor_dir(base, _ANCHOR) == anchor
     request = _claim_request(anchor, "root-thread")
     assert request["key"] == "root-thread"
     assert request["provider"] == provider

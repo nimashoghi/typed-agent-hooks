@@ -55,3 +55,28 @@ def test_forwarding_install_is_idempotent_and_preserves_unrelated(tmp_path: Path
     assert first["codex"].changed is True
     assert second["codex"].changed is False
     assert json.loads(path.read_text(encoding="utf-8"))["unrelated"] == 1
+
+
+def test_codex_async_startup_is_explicit_and_survives_reinstallation(tmp_path: Path) -> None:
+    forwarding = ForwardingHooks(
+        name="ipi",
+        server_name="ipi",
+        timeout=335,
+        startup_wait=300,
+        response_timeout=31,
+        codex_async_events=("SessionStart", "SubagentStart"),
+    )
+    prefix = ["/prepared/bin/tah-fastmcp-forward"]
+    first = forwarding.install(provider="codex", project_root=tmp_path, command_prefix=prefix)
+    second = forwarding.install(provider="codex", project_root=tmp_path, command_prefix=prefix)
+    assert first["codex"].changed
+    assert not second["codex"].changed
+    hooks = json.loads(first["codex"].path.read_text())["hooks"]
+    for event, groups in hooks.items():
+        command = groups[0]["hooks"][0]
+        assert command.get("async", False) is (event in {"SessionStart", "SubagentStart"})
+        assert "--startup-wait 300" in command["command"]
+    claude_hooks = cast(
+        dict[str, Any], forwarding.render("claude_code", command_prefix=prefix)["hooks"]
+    )
+    assert all("async" not in groups[0]["hooks"][0] for groups in claude_hooks.values())

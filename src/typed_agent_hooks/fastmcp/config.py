@@ -31,6 +31,7 @@ class ForwardingHooks:
         timeout: int,
         startup_wait: int,
         response_timeout: int,
+        codex_async_events: tuple[codex.events.CodexEventName, ...] = (),
     ) -> None:
         self.name = validate_name(name, kind="app name")
         self.server_name = validate_name(server_name, kind="server name")
@@ -47,6 +48,9 @@ class ForwardingHooks:
         self.timeout = timeout
         self.startup_wait = startup_wait
         self.response_timeout = response_timeout
+        if unknown := set(codex_async_events) - set(codex.EVENT_NAMES):
+            raise ValueError(f"Unknown Codex async events: {sorted(unknown)}")
+        self.codex_async_events = frozenset(codex_async_events)
 
     @staticmethod
     def events(provider: ProviderName) -> tuple[str, ...]:
@@ -79,12 +83,19 @@ class ForwardingHooks:
             str(self.response_timeout),
         ]
         if provider == "codex":
-            command = codex.config.CommandHook(
-                command=shlex.join([*prefix, *args]),
-                timeout=self.timeout,
-            )
             hooks = {
-                event: [codex.config.HookGroup(hooks=[command])] for event in codex.EVENT_NAMES
+                event: [
+                    codex.config.HookGroup(
+                        hooks=[
+                            codex.config.CommandHook(
+                                command=shlex.join([*prefix, *args]),
+                                timeout=self.timeout,
+                                async_=True if event in self.codex_async_events else None,
+                            )
+                        ]
+                    )
+                ]
+                for event in codex.EVENT_NAMES
             }
             return config_dict(codex.config.HooksFile(hooks=hooks))
 

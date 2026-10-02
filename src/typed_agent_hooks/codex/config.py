@@ -29,6 +29,7 @@ class CommandHook(StrictModel):
     type: Literal["command"] = "command"
     command: str = Field(min_length=1)
     timeout: PositiveSeconds | None = None
+    async_: bool | None = Field(default=None, alias="async")
     status_message: str | None = Field(
         default=None, validation_alias="statusMessage", serialization_alias="statusMessage"
     )
