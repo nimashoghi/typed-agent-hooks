@@ -87,10 +87,12 @@ class ForwardingHooks:
                 event: [
                     codex.config.HookGroup(
                         hooks=[
-                            codex.config.CommandHook(
-                                command=shlex.join([*prefix, *args]),
-                                timeout=self.timeout,
-                                async_=True if event in self.codex_async_events else None,
+                            codex.config.CommandHook.model_validate(
+                                {
+                                    "command": shlex.join([*prefix, *args]),
+                                    "timeout": self.timeout,
+                                    "async": True if event in self.codex_async_events else None,
+                                }
                             )
                         ]
                     )
