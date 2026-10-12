@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any, cast
 
@@ -11,6 +13,47 @@ from typed_agent_hooks.config import read_json_object
 from typed_agent_hooks.core import Provider
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def test_claude_fork_command_hook_delivers_context(tmp_path: Path) -> None:
+    executable = tmp_path / "fork_hook.py"
+    executable.write_text(
+        "from typed_agent_hooks import shared\n"
+        "app = shared.HookApp(name='fork-test')\n"
+        "@app.on(shared.events.SessionStarted)\n"
+        "def started(event):\n"
+        "    return shared.outputs.AddContext(text=f'Session source: {event.source}')\n"
+        "app.main()\n",
+        encoding="utf-8",
+    )
+    payload = json.loads((FIXTURES / "claude_code_inputs.json").read_text())[0]
+    payload["source"] = "fork"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(executable),
+            "_typed-agent-hooks",
+            "run",
+            "--provider",
+            "claude_code",
+            "--managed-app",
+            "fork-test",
+        ],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    assert json.loads(result.stdout) == {
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": "Session source: fork",
+        }
+    }
 
 
 def _executable(tmp_path: Path, name: str = "hook.py") -> Path:

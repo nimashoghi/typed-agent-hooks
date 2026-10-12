@@ -42,7 +42,7 @@ PermissionMode: TypeAlias = Literal[
     "default", "plan", "acceptEdits", "auto", "dontAsk", "bypassPermissions"
 ]
 EffortLevel: TypeAlias = Literal["low", "medium", "high", "xhigh", "max"]
-StartSource: TypeAlias = Literal["startup", "resume", "clear", "compact"]
+StartSource: TypeAlias = Literal["startup", "resume", "clear", "compact", "fork"]
 SetupTrigger: TypeAlias = Literal["init", "maintenance"]
 CompactTrigger: TypeAlias = Literal["manual", "auto"]
 MemoryType: TypeAlias = Literal["User", "Project", "Local", "Managed"]

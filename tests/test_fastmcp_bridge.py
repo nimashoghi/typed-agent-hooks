@@ -9,6 +9,7 @@ A short temp base (not pytest's long ``tmp_path``) keeps unix-socket paths under
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shutil
 import tempfile
@@ -22,9 +23,10 @@ pytest.importorskip("fastmcp")
 
 from fastmcp import Client, FastMCP  # noqa: E402
 
+from typed_agent_hooks import shared  # noqa: E402
 from typed_agent_hooks.fastmcp import bridge as B  # noqa: E402
 from typed_agent_hooks.fastmcp import rendezvous as rz  # noqa: E402
-from typed_agent_hooks.fastmcp import wire  # noqa: E402
+from typed_agent_hooks.fastmcp import shim, wire  # noqa: E402
 
 pytestmark = pytest.mark.skipif(
     not rz.supported(), reason="the FastMCP bridge requires POSIX ownership and AF_UNIX"
@@ -101,6 +103,47 @@ async def _client_forward(desc: dict, payload: dict, *, key: str, nonce: str | N
         return wire.decode_body(length, await reader.readexactly(length))
     finally:
         writer.close()
+
+
+def test_claude_fork_forwarder_delivers_shared_handler_context(short_base, monkeypatch):
+    _patch_registry(monkeypatch, short_base)
+    process = rz.process_stat(os.getpid())
+    assert process is not None
+    monkeypatch.setattr(rz, "find_harness_anchor", lambda: (os.getpid(), process[1]))
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "fork-child")
+    app = shared.HookApp(name="fork-test")
+
+    @app.on(shared.events.SessionStarted)
+    def started(event: shared.events.SessionStarted) -> shared.outputs.Result:
+        return shared.outputs.AddContext(text=f"Session source: {event.source}")
+
+    server = FastMCP("t", lifespan=lambda s: _yield(None))
+    B.attach(server, app, provider="shared", server_name="ipi")
+    payload: dict[str, object] = SESSION_START | {
+        "session_id": "fork-child",
+        "transcript_path": "/tmp/fork-child.jsonl",
+        "model": "claude",
+        "source": "fork",
+    }
+
+    async def body():
+        async with server._lifespan(server):
+            return await asyncio.to_thread(
+                shim.forward,
+                payload,
+                provider="claude_code",
+                registry_root=short_base,
+                startup_wait=0,
+            )
+
+    output = asyncio.run(body())
+    assert output is not None
+    assert json.loads(output) == {
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": "Session source: fork",
+        }
+    }
 
 
 def test_lifespan_wrap_yields_through_serves_and_cleans_up(short_base, monkeypatch):
