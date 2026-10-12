@@ -136,7 +136,8 @@ def test_shared_app_requires_explicit_provider_at_runtime() -> None:
 
 
 @pytest.mark.parametrize("source", ["startup", "resume", "clear", "compact", "fork"])
-def test_codex_session_start_source_reaches_shared_handler(source: str) -> None:
+@pytest.mark.parametrize("provider", ["codex", "claude_code"])
+def test_session_start_source_reaches_shared_handler(source: str, provider: str) -> None:
     from typed_agent_hooks.core import Provider
 
     app = shared.HookApp(name="session-source")
@@ -145,9 +146,9 @@ def test_codex_session_start_source_reaches_shared_handler(source: str) -> None:
     def add_context(event: shared.events.SessionStarted) -> shared.outputs.Result:
         return shared.outputs.AddContext(text=f"Session source: {event.source}")
 
-    payload = _payload("codex_inputs.json", "SessionStart") | {"source": source}
+    payload = _payload(f"{provider}_inputs.json", "SessionStart") | {"source": source}
 
-    rendered = app.handle_json(Provider.CODEX, payload)
+    rendered = app.handle_json(Provider(provider), payload)
 
     assert rendered is not None
     assert json.loads(rendered) == {

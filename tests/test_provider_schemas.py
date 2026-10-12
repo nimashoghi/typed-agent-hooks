@@ -60,6 +60,14 @@ def test_provider_inputs_still_reject_declared_field_type_drift() -> None:
         claude_code.parse_input(payload)
 
 
+@pytest.mark.parametrize("source", ["unknown", 7, None])
+def test_claude_session_start_rejects_invalid_sources(source: object) -> None:
+    payload = _payloads("claude_code_inputs.json")[0] | {"source": source}
+
+    with pytest.raises(ValidationError, match="SessionStart.source"):
+        claude_code.parse_input(payload)
+
+
 def test_provider_config_rejects_matchers_for_events_that_ignore_them() -> None:
     codex_group = codex.config.HookGroup(
         matcher="anything",
