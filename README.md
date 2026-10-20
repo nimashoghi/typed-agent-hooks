@@ -4,6 +4,8 @@
 
 The package provides strict provider wire models, a conservative shared semantic API, preservation-oriented config reconciliation, ordered collections of independent hook executables, and an optional FastMCP bridge.
 
+FastMCP bridge handlers can inspect `event.context.response_available` on shared events. It is false when an event was buffered before the bridge became available: observers still run, but the original hook process has exited and returned context cannot reach the agent. Defer context and any "context delivered" state until a later event with a live response channel. The flag is transport metadata, separate from provider input, and does not acknowledge that a live response was received.
+
 ## One executable hook
 
 Put the dependencies in the executable with PEP 723 and define configuration beside the handler:

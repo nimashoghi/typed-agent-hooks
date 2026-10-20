@@ -223,15 +223,23 @@ class HookBridge:
 
     async def _dispatch_quiet(self, payload: dict, fwd_provider: Any) -> None:
         with contextlib.suppress(Exception):
-            await self._dispatch(payload, fwd_provider)
+            await self._dispatch(payload, fwd_provider, response_available=False)
 
-    async def _dispatch(self, payload: dict, fwd_provider: Any) -> str | None:
+    async def _dispatch(
+        self, payload: dict, fwd_provider: Any, *, response_available: bool = True
+    ) -> str | None:
+        from typed_agent_hooks._delivery import response_available as delivery_response
+
         loop = asyncio.get_running_loop()
 
         def _call() -> str | None:
-            if self._provider == "shared":
-                return self._app.handle_json(Provider(fwd_provider), payload)
-            return self._app.handle_json(payload)
+            token = delivery_response.set(response_available)
+            try:
+                if self._provider == "shared":
+                    return self._app.handle_json(Provider(fwd_provider), payload)
+                return self._app.handle_json(payload)
+            finally:
+                delivery_response.reset(token)
 
         # Run the (sync) HookApp off the loop: keeps the loop responsive, lets a
         # handler call back into the loop for async state, and bounds the time.

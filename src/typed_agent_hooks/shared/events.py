@@ -4,6 +4,7 @@ from typing import Annotated, Literal, TypeAlias
 
 from pydantic import Field, TypeAdapter
 
+from typed_agent_hooks._delivery import response_available as _delivery_response
 from typed_agent_hooks.core import Json, Provider, StrictModel
 
 SharedEventName: TypeAlias = Literal[
@@ -41,6 +42,9 @@ class EventContext(StrictModel):
     # Claude's native prompt identity is distinct from its display turn ID.
     prompt_id: str | None = None
     scratchpad_dir: str | None = None
+    # Buffered bridge events still run observers, but their original hook process
+    # has exited. Handlers must defer context until a live event can return it.
+    response_available: bool = Field(default_factory=lambda: _delivery_response.get())
 
 
 class BaseEvent(StrictModel):
