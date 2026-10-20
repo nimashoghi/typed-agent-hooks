@@ -146,6 +146,117 @@ def test_claude_fork_forwarder_delivers_shared_handler_context(short_base, monke
     }
 
 
+@pytest.mark.parametrize("provider", ["codex", "claude_code"])
+def test_buffered_prompt_has_no_response_channel_then_live_prompt_does(
+    short_base, monkeypatch, provider
+):
+    _patch_registry(monkeypatch, short_base)
+    process = rz.process_stat(os.getpid())
+    assert process is not None
+    monkeypatch.setattr(rz, "find_harness_anchor", lambda: (os.getpid(), process[1]))
+    payload: dict[str, object] = USER_PROMPT | {"transcript_path": "/tmp/session.jsonl"}
+    observed = []
+    app = shared.HookApp(name="delivery-test")
+
+    @app.on(shared.events.PromptSubmitted)
+    def prompted(event: shared.events.PromptSubmitted) -> shared.outputs.Result:
+        observed.append((event.prompt, event.context.response_available))
+        if event.context.response_available:
+            return shared.outputs.AddContext(text="Notebook context")
+        return None
+
+    server = FastMCP("t", lifespan=lambda s: _yield(None))
+    bridge = B.attach(server, app, provider="shared", server_name="ipi")
+
+    async def body():
+        # Run the real forwarder before the bridge has a route.
+        assert (
+            await asyncio.to_thread(
+                shim.forward,
+                payload,
+                provider=provider,
+                registry_root=short_base,
+                startup_wait=0,
+            )
+            is None
+        )
+        async with server._lifespan(server):
+            bridge._maybe_bind("s")
+
+            async def replay_finished():
+                while not observed:
+                    await asyncio.sleep(0.01)
+
+            await asyncio.wait_for(replay_finished(), timeout=2)
+            output = await asyncio.to_thread(
+                shim.forward,
+                payload | {"prompt": "live"},
+                provider=provider,
+                registry_root=short_base,
+                startup_wait=0,
+            )
+            assert output is not None and "Notebook context" in output
+            # Late replay cannot change the next live invocation's capability.
+            await bridge._dispatch_quiet(payload | {"prompt": "late"}, provider)
+            await bridge._dispatch(payload | {"prompt": "still live"}, provider)
+
+    asyncio.run(body())
+    assert observed == [
+        ("first prompt", False),
+        ("live", True),
+        ("late", False),
+        ("still live", True),
+    ]
+
+
+def test_delivery_metadata_is_isolated_across_concurrent_dispatches():
+    from threading import Barrier
+
+    barrier = Barrier(2)
+    observed = {}
+    app = shared.HookApp(name="concurrent-delivery")
+
+    @app.on(shared.events.PromptSubmitted)
+    def prompted(event: shared.events.PromptSubmitted) -> None:
+        barrier.wait(timeout=2)
+        observed[event.prompt] = event.context.response_available
+
+    server = FastMCP("t", lifespan=lambda s: _yield(None))
+    bridge = B.attach(server, app, provider="shared", server_name="ipi")
+
+    async def body():
+        await asyncio.gather(
+            bridge._dispatch_quiet(USER_PROMPT | {"prompt": "replay"}, "codex"),
+            bridge._dispatch(USER_PROMPT | {"prompt": "live"}, "codex"),
+        )
+
+    asyncio.run(body())
+    assert observed == {"replay": False, "live": True}
+
+
+def test_delivery_metadata_resets_after_handler_exception():
+    from concurrent.futures import ThreadPoolExecutor
+
+    from typed_agent_hooks._delivery import response_available
+
+    class Broken:
+        def handle_json(self, payload):
+            assert response_available.get() is False
+            raise RuntimeError("handler failed")
+
+    server = FastMCP("t", lifespan=lambda s: _yield(None))
+    bridge = B.attach(server, Broken(), provider="codex", server_name="ipi")
+
+    async def body():
+        loop = asyncio.get_running_loop()
+        # Reuse exactly the worker that raised, so a leaked token is observable.
+        loop.set_default_executor(ThreadPoolExecutor(max_workers=1))
+        await bridge._dispatch_quiet(USER_PROMPT, "codex")
+        assert await loop.run_in_executor(None, response_available.get) is True
+
+    asyncio.run(body())
+
+
 def test_lifespan_wrap_yields_through_serves_and_cleans_up(short_base, monkeypatch):
     _patch_registry(monkeypatch, short_base)
     sentinel = object()
