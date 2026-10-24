@@ -1,12 +1,10 @@
-"""Strict Codex command-hook output schemas and event/output validation."""
+"""Strict Codex command-hook output schemas."""
 
 from typing import Literal, TypeAlias
 
 from pydantic import Field, model_validator
 
-from typed_agent_hooks.core import CommonOutput, Json, StrictModel, render_json
-
-from .events import CodexEventName
+from typed_agent_hooks.core import CommonOutput, Json, StrictModel
 
 
 class AdditionalContext(StrictModel):
@@ -192,30 +190,3 @@ StructuredOutput: TypeAlias = (
     | StopOutput
 )
 HookResult: TypeAlias = StructuredOutput | None
-
-_OUTPUT_TYPE_BY_EVENT: dict[CodexEventName, type[StructuredOutput]] = {
-    "SessionStart": SessionStartOutput,
-    "SubagentStart": SubagentStartOutput,
-    "PreToolUse": PreToolUseOutput,
-    "PermissionRequest": PermissionRequestOutput,
-    "PostToolUse": PostToolUseOutput,
-    "PreCompact": LifecycleOutput,
-    "PostCompact": LifecycleOutput,
-    "UserPromptSubmit": UserPromptSubmitOutput,
-    "SubagentStop": StopOutput,
-    "Stop": StopOutput,
-}
-
-
-def render_output(event_name: CodexEventName, output: HookResult) -> str | None:
-    """Render output after verifying it belongs to the handled Codex event."""
-
-    if output is None:
-        return None
-    expected = _OUTPUT_TYPE_BY_EVENT[event_name]
-    if type(output) is not expected:
-        raise TypeError(
-            f"{event_name} handler returned {type(output).__name__}; "
-            f"expected {expected.__name__} or None"
-        )
-    return render_json(output)

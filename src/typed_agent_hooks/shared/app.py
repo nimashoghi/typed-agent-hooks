@@ -8,9 +8,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
-from typed_agent_hooks.core import HOSTS, Host, JsonInput
+from typed_agent_hooks import claude_code, codex
+from typed_agent_hooks.core import HOSTS, Host, JsonInput, render_json
 
 from .adapters import from_claude_code, from_codex
+from .claude_code_outputs import to_claude_code_output
+from .codex_outputs import to_codex_output
 from .events import EVENT_TYPES, AnyEvent, BaseEvent
 from .outputs import Result
 
@@ -52,24 +55,14 @@ class HookApp:
         """
 
         if host == "codex":
-            from typed_agent_hooks import codex
-
-            from .codex_outputs import to_codex_output
-
-            codex_event = codex.parse_input(payload)
-            event = from_codex(codex_event)
+            event = from_codex(codex.parse_input(payload))
             output = to_codex_output(event, self._call(event))
-            return codex.render_output(codex_event.hook_event_name, output)
-        if host == "claude":
-            from typed_agent_hooks import claude_code
-
-            from .claude_code_outputs import to_claude_code_output
-
-            claude_event = claude_code.parse_input(payload)
-            event = from_claude_code(claude_event)
+        elif host == "claude":
+            event = from_claude_code(claude_code.parse_input(payload))
             output = to_claude_code_output(event, self._call(event))
-            return claude_code.render_output(claude_event.hook_event_name, output)
-        raise ValueError(f"unknown host {host!r}")
+        else:
+            raise ValueError(f"unknown host {host!r}")
+        return None if output is None else render_json(output)
 
     def _call(self, event: AnyEvent) -> Result:
         handler = self.handlers.get(type(event))

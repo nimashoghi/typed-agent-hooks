@@ -5,6 +5,7 @@ from typing import Any, Literal, cast
 import pytest
 
 from typed_agent_hooks import claude_code, codex, shared
+from typed_agent_hooks.core import render_json
 from typed_agent_hooks.shared.adapters import from_claude_code, from_codex
 from typed_agent_hooks.shared.claude_code_outputs import to_claude_code_output
 from typed_agent_hooks.shared.codex_outputs import to_codex_output
@@ -73,9 +74,8 @@ def test_claude_tool_failure_carries_a_system_message() -> None:
 
     output = to_claude_code_output(event, shared.outputs.SystemMessage(message="The tool failed."))
 
-    assert claude_code.render_output("PostToolUseFailure", output) == (
-        '{"systemMessage":"The tool failed."}'
-    )
+    assert output is not None
+    assert render_json(output) == ('{"systemMessage":"The tool failed."}')
 
 
 def test_claude_failure_maps_to_tool_call_failed() -> None:

@@ -1,9 +1,6 @@
 """Explicit host-to-shared event adapters."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
+from typed_agent_hooks import claude_code, codex
 from typed_agent_hooks.core import Host
 
 from .events import (
@@ -22,10 +19,6 @@ from .events import (
     ToolCallProposed,
     TurnStopped,
 )
-
-if TYPE_CHECKING:
-    from typed_agent_hooks import claude_code, codex
-
 
 NATIVE_EVENT_NAMES: dict[Host, dict[type[BaseEvent], str]] = {
     "codex": {
@@ -67,8 +60,6 @@ def native_event_name(event_type: type[BaseEvent], host: Host) -> str | None:
 
 
 def _codex_context(event: codex.events.AnyInput) -> EventContext:
-    from typed_agent_hooks import codex
-
     if isinstance(
         event,
         (
@@ -99,8 +90,6 @@ def _codex_context(event: codex.events.AnyInput) -> EventContext:
 
 
 def _claude_context(event: claude_code.events.AnyInput) -> EventContext:
-    from typed_agent_hooks import claude_code
-
     model = event.model if isinstance(event, claude_code.events.SessionStartInput) else None
     return EventContext(
         host="claude",
@@ -119,8 +108,6 @@ def _claude_context(event: claude_code.events.AnyInput) -> EventContext:
 
 def from_codex(event: codex.events.AnyInput) -> AnyEvent:
     """Map a Codex wire event into its shared semantic event."""
-
-    from typed_agent_hooks import codex
 
     context = _codex_context(event)
     match event:
@@ -185,8 +172,6 @@ def from_codex(event: codex.events.AnyInput) -> AnyEvent:
 
 def from_claude_code(event: claude_code.events.AnyInput) -> AnyEvent:
     """Map a Claude Code wire event into its shared semantic event."""
-
-    from typed_agent_hooks import claude_code
 
     context = _claude_context(event)
     match event:

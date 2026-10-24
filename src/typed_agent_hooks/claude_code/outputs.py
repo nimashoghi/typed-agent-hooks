@@ -1,12 +1,10 @@
-"""Strict Claude Code command-hook output schemas and event/output validation."""
+"""Strict Claude Code command-hook output schemas."""
 
 from typing import Literal, TypeAlias
 
 from pydantic import Field, model_validator
 
-from typed_agent_hooks.core import CommonOutput, Json, StrictModel, render_json
-
-from .events import ClaudeEventName
+from typed_agent_hooks.core import CommonOutput, Json, StrictModel
 
 
 class _BlockableOutput(CommonOutput):
@@ -223,31 +221,3 @@ StructuredOutput: TypeAlias = (
     | PostCompactOutput
 )
 HookResult: TypeAlias = StructuredOutput | None
-
-_OUTPUT_TYPE_BY_EVENT: dict[ClaudeEventName, type[StructuredOutput]] = {
-    "SessionStart": SessionStartOutput,
-    "UserPromptSubmit": UserPromptSubmitOutput,
-    "PreToolUse": PreToolUseOutput,
-    "PermissionRequest": PermissionRequestOutput,
-    "PostToolUse": PostToolUseOutput,
-    "PostToolUseFailure": PostToolUseFailureOutput,
-    "SubagentStart": SubagentStartOutput,
-    "SubagentStop": SubagentStopOutput,
-    "Stop": StopOutput,
-    "PreCompact": PreCompactOutput,
-    "PostCompact": PostCompactOutput,
-}
-
-
-def render_output(event_name: ClaudeEventName, output: HookResult) -> str | None:
-    """Render output after verifying it belongs to the handled Claude Code event."""
-
-    if output is None:
-        return None
-    expected = _OUTPUT_TYPE_BY_EVENT[event_name]
-    if type(output) is not expected:
-        raise TypeError(
-            f"{event_name} handler returned {type(output).__name__}; "
-            f"expected {expected.__name__} or None"
-        )
-    return render_json(output)

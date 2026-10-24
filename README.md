@@ -39,7 +39,7 @@ uv uses only uploads from before the `exclude-newer` date, for every package. Se
 
 ## Host files
 
-The host files call the hook with the host name as the only argument. Codex, in `.codex/hooks.json`:
+The host files call the hook with the host name as the only argument. The command ends with `|| true`, so that a failure before `main()` runs cannot block the action (see below). Codex, in `.codex/hooks.json`:
 
 ```json
 {
@@ -47,7 +47,7 @@ The host files call the hook with the host name as the only argument. Codex, in 
     "PostToolUse": [
       {
         "matcher": "Bash",
-        "hooks": [{ "type": "command", "command": ".agent-hooks/inline-python.py codex", "timeout": 5 }]
+        "hooks": [{ "type": "command", "command": ".agent-hooks/inline-python.py codex || true", "timeout": 5 }]
       }
     ]
   }
@@ -65,7 +65,7 @@ Claude Code, in `.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.agent-hooks/inline-python.py claude",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.agent-hooks/inline-python.py claude || true",
             "timeout": 5
           }
         ]
@@ -83,7 +83,7 @@ Claude Code, in `.claude/settings.json`:
 - A failure fails open: one line on stderr, nothing on stdout, exit 0. Failures include a payload that does not parse, an event that has no handler, an event that has no shared equivalent, a handler exception or `sys.exit`, and an output that the event cannot carry.
 - A missing or unknown host argument is a programming error: a usage line on stderr and exit 1. Both hosts read exit 1 as a non-blocking error, so a wrong host file does not block a tool call or a prompt.
 
-`main()` fails open only after the file runs. `uv run --script` can fail before that, for example when the uv cache is cold and the package index is not available. uv then exits 2, which both hosts read as a blocking error. Prepare the environment before a session, for example with `uv sync --script FILE`.
+`main()` fails open only after the file runs. `uv run --script` can fail before that, for example when the uv cache is cold and the package index is not available. uv then exits 2, which both hosts read as a blocking error. The `|| true` in the host command turns that exit into 0. `main()` reports every block and deny decision as JSON with exit 0, so no intended behavior depends on the exit code.
 
 `app.handle(host, payload)` does the same work in the current process and raises on each failure. Use it in tests.
 
