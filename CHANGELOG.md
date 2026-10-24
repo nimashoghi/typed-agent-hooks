@@ -21,6 +21,8 @@ Added:
 
 Fixed:
 
+- `CompactionStarting` and `CompactionFinished` accept no result. Before, `SystemMessage` and `Stop` on them did nothing in Claude Code, and `Block` on `CompactionStarting` skipped the compaction in Claude Code but stopped the turn in Codex.
+- `AllowTool` without `updated_input` raises `SharedOutputError` in Codex. Before, Codex rejected the output and dropped its context.
 - A Claude Code `PreCompact` payload with `custom_instructions: null` (automatic compaction, or `/compact` with no text) parses. It failed validation before, so the hook did not run.
 - `SystemMessage` on a Claude Code `ToolCallFailed` event renders a `PostToolUseFailure` output. It raised `AssertionError` before.
 - `AddContext` is valid on `ToolCallFailed`. Claude Code sends a failed tool call as `PostToolUseFailure`, which accepts additional context, so a hook can add context after every finished tool call in both hosts.
@@ -36,6 +38,7 @@ Removed:
 - `shared.try_from_claude_code`, `shared.NoSharedMappingError`, `shared.parse_codex` and `shared.parse_claude_code`. `app.handle` replaces the parse helpers.
 - The `shared` exports `adapters`, `from_codex` and `from_claude_code`, and `shared.outputs.to_codex_output` and `to_claude_code_output`. The converters are in the private modules `shared.adapters`, `shared.codex_outputs` and `shared.claude_code_outputs`. `shared.results` is merged into `shared.outputs`.
 - The `kind` field of each shared result.
+- `codex.outputs.LifecycleOutput`, `claude_code.outputs.PreCompactOutput` and `claude_code.outputs.PostCompactOutput`. No shared result writes them.
 - The validation aliases of the output models and `populate_by_name`. Nothing parses host JSON into an output model, so output models take only Python field names. They still write the host names.
 - The output validators that the shared converters cannot trigger: `updatedInput` without an allow decision, and a message on an allowed permission request. The block-reason validators stay.
 - `codex.render_output` and `claude_code.render_output`, with their check of the output type. The shared converters always produce the right type, and `HookApp.handle` renders with `core.render_json`.

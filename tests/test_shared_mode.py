@@ -142,10 +142,92 @@ def test_compaction_context_error_points_to_context_capable_boundary() -> None:
     assert str(raised.value) == (
         "AddContext is not portable for CompactionFinished (codex PostCompact); "
         "valid events: PromptSubmitted, SessionStarted, SubagentStarted, "
-        "ToolCallCompleted, ToolCallFailed, ToolCallProposed. Return post-compaction "
-        "context from "
-        "SessionStarted(source='compact') instead"
+        "ToolCallCompleted, ToolCallFailed, ToolCallProposed. Compaction events only "
+        "observe; for context after compaction, return AddContext from "
+        "SessionStarted(source='compact')"
     )
+
+
+@pytest.mark.parametrize("event_name", ["PreCompact", "PostCompact"])
+@pytest.mark.parametrize(
+    "result",
+    [
+        shared.outputs.SystemMessage(message="Compacting."),
+        shared.outputs.Block(reason="Not now."),
+        shared.outputs.Stop(reason="Stop here."),
+    ],
+)
+def test_compaction_events_accept_no_result(event_name: str, result: object) -> None:
+    codex_event = from_codex(codex.parse_input(_payload("codex_inputs.json", event_name)))
+    claude_event = from_claude_code(
+        claude_code.parse_input(_payload("claude_code_inputs.json", event_name))
+    )
+
+    with pytest.raises(SharedOutputError, match="Compaction events only observe"):
+        to_codex_output(codex_event, cast(Any, result))
+    with pytest.raises(SharedOutputError, match="Compaction events only observe"):
+        to_claude_code_output(claude_event, cast(Any, result))
+
+
+def test_allow_tool_without_updated_input_is_claude_code_only() -> None:
+    codex_event = from_codex(codex.parse_input(_payload("codex_inputs.json", "PreToolUse")))
+    claude_event = from_claude_code(
+        claude_code.parse_input(_payload("claude_code_inputs.json", "PreToolUse"))
+    )
+    allow = shared.outputs.AllowTool(reason="Safe command.")
+
+    with pytest.raises(SharedOutputError, match="only with updated_input"):
+        to_codex_output(codex_event, allow)
+    rewrite = shared.outputs.AllowTool(updated_input={"command": "echo safe"})
+    assert render_json(cast(Any, to_codex_output(codex_event, rewrite))) == (
+        '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow",'
+        '"updatedInput":{"command":"echo safe"}}}'
+    )
+    assert render_json(cast(Any, to_claude_code_output(claude_event, allow))) == (
+        '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow",'
+        '"permissionDecisionReason":"Safe command."}}'
+    )
+
+
+@pytest.mark.parametrize(
+    ("event_name", "result", "rendered"),
+    [
+        (
+            "PreToolUse",
+            shared.outputs.DenyTool(reason="Not allowed."),
+            '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",'
+            '"permissionDecisionReason":"Not allowed."}}',
+        ),
+        (
+            "UserPromptSubmit",
+            shared.outputs.Block(reason="Rephrase."),
+            '{"decision":"block","reason":"Rephrase."}',
+        ),
+        (
+            "Stop",
+            shared.outputs.Stop(reason="Done."),
+            '{"continue":false,"stopReason":"Done."}',
+        ),
+        (
+            "PostToolUse",
+            shared.outputs.SystemMessage(message="Checked."),
+            '{"systemMessage":"Checked."}',
+        ),
+    ],
+)
+@pytest.mark.parametrize("host", ["codex", "claude"])
+def test_results_render_the_same_wire_in_both_hosts(
+    host: str, event_name: str, result: object, rendered: str
+) -> None:
+    payload = _payload(FIXTURE_BY_HOST[host], event_name)
+    if host == "codex":
+        output = to_codex_output(from_codex(codex.parse_input(payload)), cast(Any, result))
+    else:
+        output = to_claude_code_output(
+            from_claude_code(claude_code.parse_input(payload)), cast(Any, result)
+        )
+
+    assert render_json(cast(Any, output)) == rendered
 
 
 def test_shared_app_handles_one_host_payload() -> None:

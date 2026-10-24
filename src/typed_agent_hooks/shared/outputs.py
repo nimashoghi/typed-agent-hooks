@@ -81,6 +81,21 @@ Result: TypeAlias = (
     | None
 )
 
+# The compaction events are in no set: Claude Code ignores systemMessage and
+# continue on them, and a block means different things in the two hosts.
+MESSAGE_EVENTS: frozenset[SharedEventName] = frozenset(
+    {
+        "SessionStarted",
+        "PromptSubmitted",
+        "ToolCallProposed",
+        "PermissionRequested",
+        "ToolCallCompleted",
+        "ToolCallFailed",
+        "SubagentStarted",
+        "SubagentStopped",
+        "TurnStopped",
+    }
+)
 CONTEXT_EVENTS: frozenset[SharedEventName] = frozenset(
     {
         "SessionStarted",
@@ -95,7 +110,6 @@ BLOCK_EVENTS: frozenset[SharedEventName] = frozenset(
     {
         "PromptSubmitted",
         "ToolCallCompleted",
-        "CompactionStarting",
         "SubagentStopped",
         "TurnStopped",
     }
@@ -105,8 +119,6 @@ STOP_EVENTS: frozenset[SharedEventName] = frozenset(
         "SessionStarted",
         "PromptSubmitted",
         "ToolCallCompleted",
-        "CompactionStarting",
-        "CompactionFinished",
         "SubagentStopped",
         "TurnStopped",
     }
@@ -123,8 +135,9 @@ def require_event(event: AnyEvent, allowed: frozenset[SharedEventName], output: 
             f"({event.context.host} {event.context.source_event}); "
             f"valid events: {valid_events}"
         )
-        if isinstance(output, AddContext) and event.event_name == "CompactionFinished":
+        if event.event_name in ("CompactionStarting", "CompactionFinished"):
             message += (
-                ". Return post-compaction context from SessionStarted(source='compact') instead"
+                ". Compaction events only observe; for context after compaction, return "
+                "AddContext from SessionStarted(source='compact')"
             )
         raise SharedOutputError(message)

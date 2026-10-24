@@ -93,9 +93,11 @@ A test can load a hook file without running it and compare its events with the h
 
 ```python
 import runpy
+import sys
 
 from typed_agent_hooks import shared
 
+sys.path.insert(0, ".agent-hooks")  # for helper modules next to the hooks
 app = runpy.run_path(".agent-hooks/inline-python.py")["app"]
 for event_type in app.handlers:
     print(shared.native_event_name(event_type, "codex"), shared.native_event_name(event_type, "claude"))
@@ -119,7 +121,7 @@ for event_type in app.handlers:
 | `SubagentStopped` | `SubagentStop` | `SubagentStop` | no |
 | `TurnStopped` | `Stop` | `Stop` | no |
 
-Every event carries `event.context` with the host, session ID, working directory and other session data. A handler returns one of the results in `shared.outputs`: `AddContext`, `SystemMessage`, `Block`, `AllowTool`, `DenyTool`, `AllowPermission`, `DenyPermission`, `Stop`, or `None`. A result that an event cannot carry raises `SharedOutputError`. The package does not guess a translation.
+Every event carries `event.context` with the host, session ID, working directory and other session data. A handler returns one of the results in `shared.outputs`: `AddContext`, `SystemMessage`, `Block`, `AllowTool`, `DenyTool`, `AllowPermission`, `DenyPermission`, `Stop`, or `None`. A result that an event cannot carry in both hosts raises `SharedOutputError`. The package does not guess a translation. The compaction events accept no result: Claude Code ignores `systemMessage` and `continue` on them, and a block means different things in the two hosts. Codex accepts `AllowTool` only with `updated_input`.
 
 ## Host wire schemas
 

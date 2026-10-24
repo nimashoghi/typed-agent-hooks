@@ -6,6 +6,7 @@ from .events import AnyEvent
 from .outputs import (
     BLOCK_EVENTS,
     CONTEXT_EVENTS,
+    MESSAGE_EVENTS,
     STOP_EVENTS,
     AddContext,
     AllowPermission,
@@ -35,10 +36,6 @@ def _system_message(event: AnyEvent, message: str) -> claude_code.outputs.Struct
             return claude_code.outputs.PostToolUseOutput(system_message=message)
         case "ToolCallFailed":
             return claude_code.outputs.PostToolUseFailureOutput(system_message=message)
-        case "CompactionStarting":
-            return claude_code.outputs.PreCompactOutput(system_message=message)
-        case "CompactionFinished":
-            return claude_code.outputs.PostCompactOutput(system_message=message)
         case "SubagentStarted":
             return claude_code.outputs.SubagentStartOutput(system_message=message)
         case "SubagentStopped":
@@ -132,14 +129,6 @@ def _block(event: AnyEvent, output: Block) -> claude_code.outputs.StructuredOutp
                 decision="block",
                 reason=output.reason,
                 hook_specific_output=completed_specific,
-            )
-        case "CompactionStarting":
-            if output.context is not None:
-                raise SharedOutputError("CompactionStarting block cannot include context")
-            return claude_code.outputs.PreCompactOutput(
-                system_message=output.system_message,
-                decision="block",
-                reason=output.reason,
             )
         case "SubagentStopped":
             subagent_specific = (
@@ -239,18 +228,6 @@ def _stop(event: AnyEvent, output: Stop) -> claude_code.outputs.StructuredOutput
                 continue_=False,
                 stop_reason=output.reason,
             )
-        case "CompactionStarting":
-            return claude_code.outputs.PreCompactOutput(
-                system_message=output.system_message,
-                continue_=False,
-                stop_reason=output.reason,
-            )
-        case "CompactionFinished":
-            return claude_code.outputs.PostCompactOutput(
-                system_message=output.system_message,
-                continue_=False,
-                stop_reason=output.reason,
-            )
         case "SubagentStopped":
             return claude_code.outputs.SubagentStopOutput(
                 system_message=output.system_message,
@@ -273,6 +250,7 @@ def to_claude_code_output(event: AnyEvent, output: Result) -> claude_code.output
         case None:
             return None
         case SystemMessage(message=message):
+            require_event(event, MESSAGE_EVENTS, output)
             return _system_message(event, message)
         case AddContext():
             return _context(event, output)

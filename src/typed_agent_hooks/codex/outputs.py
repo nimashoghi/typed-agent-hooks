@@ -91,10 +91,6 @@ class PostToolUseOutput(StrictModel):
         return self
 
 
-class LifecycleOutput(CommonOutput):
-    """Common output used by compact lifecycle events."""
-
-
 class UserPromptSubmitSpecificOutput(StrictModel):
     hook_event_name: Literal["UserPromptSubmit"] = Field(serialization_alias="hookEventName")
     additional_context: str = Field(serialization_alias="additionalContext")
@@ -135,7 +131,6 @@ StructuredOutput: TypeAlias = (
     | PreToolUseOutput
     | PermissionRequestOutput
     | PostToolUseOutput
-    | LifecycleOutput
     | UserPromptSubmitOutput
     | StopOutput
 )

@@ -140,14 +140,6 @@ class StopOutput(_BlockableOutput):
     )
 
 
-class PreCompactOutput(_BlockableOutput):
-    """Structured output for ``PreCompact``."""
-
-
-class PostCompactOutput(CommonOutput):
-    """Structured output for ``PostCompact``."""
-
-
 StructuredOutput: TypeAlias = (
     SessionStartOutput
     | UserPromptSubmitOutput
@@ -158,7 +150,5 @@ StructuredOutput: TypeAlias = (
     | SubagentStartOutput
     | SubagentStopOutput
     | StopOutput
-    | PreCompactOutput
-    | PostCompactOutput
 )
 HookResult: TypeAlias = StructuredOutput | None
