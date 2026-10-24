@@ -133,8 +133,21 @@ class PostToolUseOutput(_BlockableOutput):
     )
 
 
+class PostToolUseFailureSpecificOutput(StrictModel):
+    hook_event_name: Literal["PostToolUseFailure"] = Field(
+        validation_alias="hookEventName", serialization_alias="hookEventName"
+    )
+    additional_context: str = Field(
+        validation_alias="additionalContext", serialization_alias="additionalContext"
+    )
+
+
 class PostToolUseFailureOutput(CommonOutput):
-    """Structured output for ``PostToolUseFailure``."""
+    hook_specific_output: PostToolUseFailureSpecificOutput | None = Field(
+        default=None,
+        validation_alias="hookSpecificOutput",
+        serialization_alias="hookSpecificOutput",
+    )
 
 
 class SubagentStartSpecificOutput(StrictModel):

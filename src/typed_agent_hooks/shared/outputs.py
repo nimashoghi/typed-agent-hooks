@@ -1,57 +1,138 @@
-"""Public shared output intents and host conversion functions."""
+"""Portable results that shared-event handlers return."""
 
-from __future__ import annotations
+from typing import Literal, TypeAlias
 
-from typing import TYPE_CHECKING
+from typed_agent_hooks.core import Json, StrictModel
 
-from .events import AnyEvent
-from .results import (
-    AddContext,
-    AllowPermission,
-    AllowTool,
-    Block,
-    DenyPermission,
-    DenyTool,
-    Result,
-    SharedOutputError,
-    Stop,
-    SystemMessage,
+from .events import AnyEvent, SharedEventName
+
+
+class SharedOutputError(ValueError):
+    """Raised when an output intent is not portable for an event and host."""
+
+
+class SystemMessage(StrictModel):
+    """Show a host system message without changing control flow."""
+
+    kind: Literal["system_message"] = "system_message"
+    message: str
+
+
+class AddContext(StrictModel):
+    """Add semantic context to the current event."""
+
+    kind: Literal["context"] = "context"
+    text: str
+    system_message: str | None = None
+
+
+class Block(StrictModel):
+    """Block a blockable shared event."""
+
+    kind: Literal["block"] = "block"
+    reason: str
+    context: str | None = None
+    system_message: str | None = None
+
+
+class AllowTool(StrictModel):
+    """Allow a proposed tool call, optionally rewriting its input."""
+
+    kind: Literal["allow_tool"] = "allow_tool"
+    reason: str | None = None
+    updated_input: Json | None = None
+    context: str | None = None
+    system_message: str | None = None
+
+
+class DenyTool(StrictModel):
+    """Deny a proposed tool call with an explicit reason."""
+
+    kind: Literal["deny_tool"] = "deny_tool"
+    reason: str
+    context: str | None = None
+    system_message: str | None = None
+
+
+class AllowPermission(StrictModel):
+    """Approve a host permission request without host-only mutations."""
+
+    kind: Literal["allow_permission"] = "allow_permission"
+    system_message: str | None = None
+
+
+class DenyPermission(StrictModel):
+    """Reject a host permission request with an explicit reason."""
+
+    kind: Literal["deny_permission"] = "deny_permission"
+    reason: str
+    system_message: str | None = None
+
+
+class Stop(StrictModel):
+    """Ask the host to stop processing with a reason."""
+
+    kind: Literal["stop"] = "stop"
+    reason: str
+    system_message: str | None = None
+
+
+Result: TypeAlias = (
+    SystemMessage
+    | AddContext
+    | Block
+    | AllowTool
+    | DenyTool
+    | AllowPermission
+    | DenyPermission
+    | Stop
+    | None
 )
 
-if TYPE_CHECKING:
-    from typed_agent_hooks import claude_code, codex
+CONTEXT_EVENTS: frozenset[SharedEventName] = frozenset(
+    {
+        "SessionStarted",
+        "PromptSubmitted",
+        "ToolCallProposed",
+        "ToolCallCompleted",
+        "ToolCallFailed",
+        "SubagentStarted",
+    }
+)
+BLOCK_EVENTS: frozenset[SharedEventName] = frozenset(
+    {
+        "PromptSubmitted",
+        "ToolCallCompleted",
+        "CompactionStarting",
+        "SubagentStopped",
+        "TurnStopped",
+    }
+)
+STOP_EVENTS: frozenset[SharedEventName] = frozenset(
+    {
+        "SessionStarted",
+        "PromptSubmitted",
+        "ToolCallCompleted",
+        "CompactionStarting",
+        "CompactionFinished",
+        "SubagentStopped",
+        "TurnStopped",
+    }
+)
 
 
-def to_codex_output(event: AnyEvent, output: Result) -> codex.outputs.HookResult:
-    """Convert a shared result after lazily loading Codex wire schemas."""
+def require_event(event: AnyEvent, allowed: frozenset[SharedEventName], output: object) -> None:
+    """Require that an output intent is portable for a shared event."""
 
-    from .codex_outputs import to_codex_output as convert
-
-    return convert(event, output)
-
-
-def to_claude_code_output(
-    event: AnyEvent,
-    output: Result,
-) -> claude_code.outputs.HookResult:
-    """Convert a shared result after lazily loading Claude Code wire schemas."""
-
-    from .claude_code_outputs import to_claude_code_output as convert
-
-    return convert(event, output)
-
-
-__all__ = [
-    "AddContext",
-    "AllowPermission",
-    "AllowTool",
-    "Block",
-    "DenyPermission",
-    "DenyTool",
-    "Result",
-    "SharedOutputError",
-    "Stop",
-    "SystemMessage",
-    "to_claude_code_output",
-    "to_codex_output",
-]
+    if event.event_name not in allowed:
+        valid_events = ", ".join(sorted(allowed))
+        message = (
+            f"{type(output).__name__} is not portable for {event.event_name} "
+            f"({event.context.host} {event.context.source_event}); "
+            f"valid events: {valid_events}"
+        )
+        if isinstance(output, AddContext) and event.event_name == "CompactionFinished":
+            message += (
+                ". Return post-compaction context from SessionStarted(source='compact') instead"
+            )
+        raise SharedOutputError(message)

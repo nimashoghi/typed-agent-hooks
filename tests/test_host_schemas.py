@@ -25,17 +25,19 @@ def test_all_codex_fixture_events_parse_strictly() -> None:
 
     parsed = [codex.parse_input(payload) for payload in payloads]
 
-    assert {event.hook_event_name for event in parsed} == set(codex.INPUT_TYPES)
+    assert {event.hook_event_name for event in parsed} == set(codex.events.INPUT_TYPES)
 
 
 def test_claude_code_fixture_events_parse_strictly_or_are_unsupported() -> None:
     payloads = _payloads("claude_code_inputs.json")
-    modeled = [item for item in payloads if item["hook_event_name"] in claude_code.INPUT_TYPES]
+    modeled = [
+        item for item in payloads if item["hook_event_name"] in claude_code.events.INPUT_TYPES
+    ]
     host_only = [item for item in payloads if item not in modeled]
 
     parsed = [claude_code.parse_input(payload) for payload in modeled]
 
-    assert {event.hook_event_name for event in parsed} == set(claude_code.INPUT_TYPES)
+    assert {event.hook_event_name for event in parsed} == set(claude_code.events.INPUT_TYPES)
     # Events with no shared equivalent, such as Notification, are not modeled.
     assert len(host_only) == 19
     for payload in host_only:

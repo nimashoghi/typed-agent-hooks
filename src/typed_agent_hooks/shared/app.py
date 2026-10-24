@@ -13,7 +13,7 @@ from typed_agent_hooks.core import HOSTS, Host, JsonInput
 
 from .adapters import from_claude_code, from_codex
 from .events import EVENT_TYPES, AnyEvent, BaseEvent
-from .outputs import Result, to_claude_code_output, to_codex_output
+from .outputs import Result
 
 EventT = TypeVar("EventT", bound=BaseEvent)
 Handler = Callable[[EventT], Result]
@@ -55,12 +55,16 @@ class HookApp:
         if host == "codex":
             from typed_agent_hooks import codex
 
+            from .codex_outputs import to_codex_output
+
             codex_event = codex.parse_input(payload)
             event = from_codex(codex_event)
             output = to_codex_output(event, self._call(event))
             return codex.render_output(codex_event.hook_event_name, output)
         if host == "claude":
             from typed_agent_hooks import claude_code
+
+            from .claude_code_outputs import to_claude_code_output
 
             claude_event = claude_code.parse_input(payload)
             event = from_claude_code(claude_event)

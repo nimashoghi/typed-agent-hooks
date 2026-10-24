@@ -35,7 +35,7 @@ if __name__ == "__main__":
     app.main()
 ```
 
-Set `exclude-newer` to a date on or after the upload of the `typed-agent-hooks` release that the file pins. uv ignores every upload after that date, the pinned release included, and the date freezes the other dependencies.
+uv uses only uploads from before the `exclude-newer` date, for every package. Set the date on or after the upload date of the pinned `typed-agent-hooks` release, or uv cannot find that release. The date also freezes the other dependencies.
 
 ## Host files
 
@@ -101,7 +101,7 @@ for event_type in app.handlers:
     print(shared.native_event_name(event_type, "codex"), shared.native_event_name(event_type, "claude"))
 ```
 
-`app.handlers` maps each shared event type to its handler. `shared.native_event_name(event_type, host)` returns the native event name, or `None` when the host has no such event.
+`app.handlers` maps each shared event type to its handler. `shared.native_event_name(event_type, host)` returns the native event name, or `None` when the host has no such event. Codex has no `ToolCallFailed` event: Claude Code sends a failed tool call as `PostToolUseFailure`, and Codex sends it as `PostToolUse`. A hook that must see every finished tool call in both hosts handles `ToolCallCompleted` and `ToolCallFailed`.
 
 ## Shared events
 
@@ -112,7 +112,7 @@ for event_type in app.handlers:
 | `ToolCallProposed` | `PreToolUse` | `PreToolUse` | yes |
 | `PermissionRequested` | `PermissionRequest` | `PermissionRequest` | no |
 | `ToolCallCompleted` | `PostToolUse` | `PostToolUse` | yes |
-| `ToolCallFailed` | none | `PostToolUseFailure` | no |
+| `ToolCallFailed` | none | `PostToolUseFailure` | yes |
 | `CompactionStarting` | `PreCompact` | `PreCompact` | no |
 | `CompactionFinished` | `PostCompact` | `PostCompact` | no |
 | `SubagentStarted` | `SubagentStart` | `SubagentStart` | yes |

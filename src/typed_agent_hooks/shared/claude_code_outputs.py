@@ -3,7 +3,7 @@
 from typed_agent_hooks import claude_code
 
 from .events import AnyEvent
-from .results import (
+from .outputs import (
     BLOCK_EVENTS,
     CONTEXT_EVENTS,
     STOP_EVENTS,
@@ -82,6 +82,14 @@ def _context(event: AnyEvent, output: AddContext) -> claude_code.outputs.Structu
             return claude_code.outputs.PostToolUseOutput(
                 system_message=output.system_message,
                 hook_specific_output=completed_specific,
+            )
+        case "ToolCallFailed":
+            failed_specific = claude_code.outputs.PostToolUseFailureSpecificOutput(
+                hook_event_name="PostToolUseFailure", additional_context=output.text
+            )
+            return claude_code.outputs.PostToolUseFailureOutput(
+                system_message=output.system_message,
+                hook_specific_output=failed_specific,
             )
         case "SubagentStarted":
             subagent_specific = claude_code.outputs.SubagentStartSpecificOutput(

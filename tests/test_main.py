@@ -42,6 +42,11 @@ def tool_completed(event):
     return shared.outputs.AddContext(text=f"completed {event.tool_input['command']}")
 
 
+@app.on(shared.events.ToolCallFailed)
+def tool_failed(event):
+    return shared.outputs.AddContext(text=f"failed {event.tool_input['command']}")
+
+
 @app.on(shared.events.PermissionRequested)
 def permission_requested(event):
     print("checking the request")
@@ -137,6 +142,16 @@ def test_handler_exit_fails_open_without_its_output(hook: Path, host: str) -> No
     assert error == "probe: SystemExit: 2"
 
 
+def test_claude_tool_failure_carries_context(hook: Path) -> None:
+    result = _run(hook, "claude", stdin=json.dumps(_payload("claude", "PostToolUseFailure")))
+
+    assert (result.returncode, result.stderr) == (0, "")
+    assert result.stdout == (
+        '{"hookSpecificOutput":{"hookEventName":"PostToolUseFailure",'
+        '"additionalContext":"failed false"}}\n'
+    )
+
+
 @pytest.mark.parametrize("host", ["codex", "claude"])
 def test_handler_returning_none_writes_nothing(hook: Path, host: str) -> None:
     result = _run(hook, host, stdin=json.dumps(_payload(host, "PreCompact")))
@@ -193,17 +208,31 @@ def test_a_check_can_read_the_handled_events_without_a_host(hook: Path) -> None:
         for host in ("codex", "claude")
     }
 
-    names = [
-        "SessionStart",
-        "UserPromptSubmit",
-        "PreToolUse",
-        "PostToolUse",
-        "PermissionRequest",
-        "PreCompact",
-        "SubagentStop",
-        "Stop",
-    ]
-    assert handled == {"codex": names, "claude": names}
+    # Codex has no ToolCallFailed event, so a host-file check skips None.
+    assert handled == {
+        "codex": [
+            "SessionStart",
+            "UserPromptSubmit",
+            "PreToolUse",
+            "PostToolUse",
+            None,
+            "PermissionRequest",
+            "PreCompact",
+            "SubagentStop",
+            "Stop",
+        ],
+        "claude": [
+            "SessionStart",
+            "UserPromptSubmit",
+            "PreToolUse",
+            "PostToolUse",
+            "PostToolUseFailure",
+            "PermissionRequest",
+            "PreCompact",
+            "SubagentStop",
+            "Stop",
+        ],
+    }
 
 
 def test_registration_rejects_a_second_handler_for_one_event() -> None:

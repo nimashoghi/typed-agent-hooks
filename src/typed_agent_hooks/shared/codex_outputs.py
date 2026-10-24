@@ -3,7 +3,7 @@
 from typed_agent_hooks import codex
 
 from .events import AnyEvent
-from .results import (
+from .outputs import (
     BLOCK_EVENTS,
     CONTEXT_EVENTS,
     STOP_EVENTS,
