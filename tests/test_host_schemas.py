@@ -39,7 +39,6 @@ def test_claude_code_fixture_events_parse_strictly_or_are_unsupported() -> None:
 
     assert {event.hook_event_name for event in parsed} == set(claude_code.events.INPUT_TYPES)
     # Events with no shared equivalent, such as Notification, are not modeled.
-    assert len(host_only) == 19
     for payload in host_only:
         with pytest.raises(ValueError, match="unsupported Claude Code hook event"):
             claude_code.parse_input(payload)

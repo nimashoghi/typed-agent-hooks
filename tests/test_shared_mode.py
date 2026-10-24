@@ -78,6 +78,15 @@ def test_claude_tool_failure_carries_a_system_message() -> None:
     assert render_json(output) == ('{"systemMessage":"The tool failed."}')
 
 
+def test_claude_compaction_without_instructions_maps_to_none() -> None:
+    payload = _payload("claude_code_inputs.json", "PreCompact") | {"custom_instructions": None}
+
+    event = from_claude_code(claude_code.parse_input(payload))
+
+    assert isinstance(event, shared.events.CompactionStarting)
+    assert event.instructions is None
+
+
 def test_claude_failure_maps_to_tool_call_failed() -> None:
     wire_event = claude_code.parse_input(_payload("claude_code_inputs.json", "PostToolUseFailure"))
 

@@ -4,18 +4,6 @@ from typing import Literal, TypeAlias, cast
 
 from typed_agent_hooks.core import InputModel, Json, JsonInput, parse_json_object
 
-CodexEventName: TypeAlias = Literal[
-    "SessionStart",
-    "SubagentStart",
-    "PreToolUse",
-    "PermissionRequest",
-    "PostToolUse",
-    "PreCompact",
-    "PostCompact",
-    "UserPromptSubmit",
-    "SubagentStop",
-    "Stop",
-]
 PermissionMode: TypeAlias = Literal[
     "default", "acceptEdits", "plan", "dontAsk", "bypassPermissions"
 ]
@@ -29,7 +17,7 @@ class BaseInput(InputModel):
     session_id: str
     transcript_path: str | None
     cwd: str
-    hook_event_name: CodexEventName
+    hook_event_name: str
     model: str
     # Present on events fired from a subagent's context (observed live on
     # PreToolUse/PostToolUse in collaboration mode); absent on the main thread.

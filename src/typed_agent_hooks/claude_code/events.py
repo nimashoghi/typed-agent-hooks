@@ -6,19 +6,6 @@ from pydantic import Field
 
 from typed_agent_hooks.core import InputModel, Json, JsonInput, parse_json_object
 
-ClaudeEventName: TypeAlias = Literal[
-    "SessionStart",
-    "UserPromptSubmit",
-    "PreToolUse",
-    "PermissionRequest",
-    "PostToolUse",
-    "PostToolUseFailure",
-    "SubagentStart",
-    "SubagentStop",
-    "Stop",
-    "PreCompact",
-    "PostCompact",
-]
 PermissionMode: TypeAlias = Literal[
     "default", "plan", "acceptEdits", "auto", "dontAsk", "bypassPermissions"
 ]
@@ -32,7 +19,7 @@ class BaseInput(InputModel):
     session_id: str
     transcript_path: str
     cwd: str
-    hook_event_name: ClaudeEventName
+    hook_event_name: str
     prompt_id: str | None = None
     scratchpad_dir: str | None = None
     permission_mode: PermissionMode | None = None
@@ -108,7 +95,8 @@ class StopInput(BaseInput):
 class PreCompactInput(BaseInput):
     hook_event_name: Literal["PreCompact"]
     trigger: CompactTrigger
-    custom_instructions: str
+    # Null for automatic compaction and for /compact with no instructions.
+    custom_instructions: str | None
 
 
 class PostCompactInput(BaseInput):

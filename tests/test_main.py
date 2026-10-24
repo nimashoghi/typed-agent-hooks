@@ -1,6 +1,7 @@
 """Run a hook file as the hosts do: ``HOOK_FILE codex|claude`` with the payload on stdin."""
 
 import json
+import os
 import runpy
 import subprocess
 import sys
@@ -91,12 +92,15 @@ def _payload(host: str, event_name: str) -> dict[str, object]:
 
 
 def _run(hook: Path, *args: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
+    # Unbuffered stdout writes a print at import before main() can redirect it.
+    env = {key: value for key, value in os.environ.items() if key != "PYTHONUNBUFFERED"}
     return subprocess.run(
         [sys.executable, str(hook), *args],
         input=stdin,
         capture_output=True,
         text=True,
         timeout=30,
+        env=env,
     )
 
 

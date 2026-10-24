@@ -13,8 +13,7 @@ Changed:
 - `EventContext.host` (`"codex"` or `"claude"`) replaces `EventContext.provider`.
 - `shared.events.EVENT_TYPES` replaces `EVENT_NAMES` and `EVENT_NAME_BY_TYPE`. `shared.events.AnyEvent` is a plain union.
 - `codex.events.INPUT_TYPES` and `claude_code.events.INPUT_TYPES` (input model by native event name) replace `EVENT_NAMES` and `INPUT_ADAPTER` in each host package. `parse_input` validates only the model that `hook_event_name` names, and raises `ValueError` for an unsupported name. `AnyInput` is a plain union.
-- All models set `defer_build`, so a hook run builds only the schemas that it uses. A Claude Code hook run is about 20 ms faster.
-- `typed_agent_hooks.shared` imports both host packages directly, with no lazy imports. The cost is about 3 ms.
+- All models set `defer_build`, so a hook run builds only the schemas that it uses. This saves about 12 ms per hook run.
 
 Added:
 
@@ -22,6 +21,7 @@ Added:
 
 Fixed:
 
+- A Claude Code `PreCompact` payload with `custom_instructions: null` (automatic compaction, or `/compact` with no text) parses. It failed validation before, so the hook did not run.
 - `SystemMessage` on a Claude Code `ToolCallFailed` event renders a `PostToolUseFailure` output. It raised `AssertionError` before.
 - `AddContext` is valid on `ToolCallFailed`. Claude Code sends a failed tool call as `PostToolUseFailure`, which accepts additional context, so a hook can add context after every finished tool call in both hosts.
 

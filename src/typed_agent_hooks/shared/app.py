@@ -76,8 +76,8 @@ class HookApp:
         Writes the host output, if any, to stdout. Everything else that the
         process writes to stdout (a print at import or in a handler, a child
         process, a C library) goes to stderr. Text that was already flushed to
-        stdout before ``main()`` (``python -u`` or an explicit flush) cannot be
-        recalled. Any failure after the host argument is read (a
+        stdout before ``main()`` (``python -u``, ``PYTHONUNBUFFERED`` or an
+        explicit flush) cannot be recalled. Any failure after the host argument is read (a
         bad payload, an event with no handler, a handler exception or
         ``sys.exit``, an output the event cannot carry) fails open: one line on
         stderr, nothing on stdout, exit 0. A missing or unknown host argument
