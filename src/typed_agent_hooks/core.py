@@ -2,8 +2,7 @@
 
 import json
 from collections.abc import Mapping
-from enum import Enum
-from typing import TypeAlias, cast
+from typing import Literal, TypeAlias, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.types import JsonValue
@@ -23,7 +22,7 @@ class StrictModel(BaseModel):
 class InputModel(BaseModel):
     """Tolerant-reader wire input: strict declared fields, unknown keys ignored.
 
-    Providers add payload fields at will, and an unknown key must never turn
+    Hosts add payload fields at will, and an unknown key must never turn
     into a dropped event: Claude Code's `prompt_id` addition silently killed
     every tool event while schemas forbade extras. Declared fields stay
     strictly typed, so drift on a known field still fails loudly. Outputs
@@ -38,12 +37,9 @@ class InputModel(BaseModel):
     )
 
 
-class Provider(str, Enum):
-    """Supported hook providers."""
-
-    CODEX = "codex"
-    CLAUDE_CODE = "claude_code"
-
+Host: TypeAlias = Literal["codex", "claude"]
+"""A hook host, named as the first argument of a hook command."""
+HOSTS: tuple[Host, ...] = ("codex", "claude")
 
 Json: TypeAlias = JsonValue
 JsonInput: TypeAlias = str | bytes | Mapping[str, object]
@@ -101,7 +97,7 @@ def parse_json_object(data: JsonInput) -> dict[str, object]:
 
 
 def render_json(model: BaseModel) -> str:
-    """Render a Pydantic model as compact provider wire JSON."""
+    """Render a Pydantic model as compact host wire JSON."""
 
     return json.dumps(
         model.model_dump(by_alias=True, exclude_none=True),

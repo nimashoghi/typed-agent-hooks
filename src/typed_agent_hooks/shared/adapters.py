@@ -1,13 +1,14 @@
-"""Explicit provider-to-shared event adapters."""
+"""Explicit host-to-shared event adapters."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from typed_agent_hooks.core import JsonInput, Provider
+from typed_agent_hooks.core import Host, JsonInput
 
 from .events import (
     AnyEvent,
+    BaseEvent,
     CompactionFinished,
     CompactionStarting,
     EventContext,
@@ -27,7 +28,46 @@ if TYPE_CHECKING:
 
 
 class NoSharedMappingError(ValueError):
-    """Raised when a provider-only event has no shared semantic mapping."""
+    """Raised when a host-only event has no shared semantic mapping."""
+
+
+NATIVE_EVENT_NAMES: dict[Host, dict[type[BaseEvent], str]] = {
+    "codex": {
+        SessionStarted: "SessionStart",
+        PromptSubmitted: "UserPromptSubmit",
+        ToolCallProposed: "PreToolUse",
+        PermissionRequested: "PermissionRequest",
+        ToolCallCompleted: "PostToolUse",
+        CompactionStarting: "PreCompact",
+        CompactionFinished: "PostCompact",
+        SubagentStarted: "SubagentStart",
+        SubagentStopped: "SubagentStop",
+        TurnStopped: "Stop",
+    },
+    "claude": {
+        SessionStarted: "SessionStart",
+        PromptSubmitted: "UserPromptSubmit",
+        ToolCallProposed: "PreToolUse",
+        PermissionRequested: "PermissionRequest",
+        ToolCallCompleted: "PostToolUse",
+        ToolCallFailed: "PostToolUseFailure",
+        CompactionStarting: "PreCompact",
+        CompactionFinished: "PostCompact",
+        SubagentStarted: "SubagentStart",
+        SubagentStopped: "SubagentStop",
+        TurnStopped: "Stop",
+    },
+}
+
+
+def native_event_name(event_type: type[BaseEvent], host: Host) -> str | None:
+    """Return the host's native hook event name for a shared event type.
+
+    Returns ``None`` when the host has no such event (Codex has no
+    ``ToolCallFailed``). Host files register a hook under this name.
+    """
+
+    return NATIVE_EVENT_NAMES[host].get(event_type)
 
 
 def _codex_context(event: codex.events.AnyInput) -> EventContext:
@@ -50,7 +90,7 @@ def _codex_context(event: codex.events.AnyInput) -> EventContext:
     else:
         permission_mode = None
     return EventContext(
-        provider=Provider.CODEX,
+        host="codex",
         source_event=event.hook_event_name,
         session_id=event.session_id,
         transcript_path=event.transcript_path,
@@ -67,7 +107,7 @@ def _claude_context(event: claude_code.events.AnyInput) -> EventContext:
 
     model = event.model if isinstance(event, claude_code.events.SessionStartInput) else None
     return EventContext(
-        provider=Provider.CLAUDE_CODE,
+        host="claude",
         source_event=event.hook_event_name,
         session_id=event.session_id,
         transcript_path=event.transcript_path,

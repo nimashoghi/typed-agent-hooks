@@ -39,8 +39,8 @@ def test_all_claude_code_fixture_events_parse_strictly() -> None:
         (claude_code.parse_input, "claude_code_inputs.json"),
     ],
 )
-def test_provider_inputs_ignore_unknown_fields(parser, fixture_name: str) -> None:
-    # Tolerant readers: a provider adding a payload field must never turn into
+def test_host_inputs_ignore_unknown_fields(parser, fixture_name: str) -> None:
+    # Tolerant readers: a host adding a payload field must never turn into
     # a dropped event. Claude Code's prompt_id addition proved forbid fatal.
     payload = _payloads(fixture_name)[0] | {"unexpected": True}
 
@@ -49,7 +49,7 @@ def test_provider_inputs_ignore_unknown_fields(parser, fixture_name: str) -> Non
     assert not hasattr(parsed, "unexpected")
 
 
-def test_provider_inputs_still_reject_declared_field_type_drift() -> None:
+def test_host_inputs_still_reject_declared_field_type_drift() -> None:
     payload = next(
         item
         for item in _payloads("claude_code_inputs.json")
@@ -68,23 +68,7 @@ def test_claude_session_start_rejects_invalid_sources(source: object) -> None:
         claude_code.parse_input(payload)
 
 
-def test_provider_config_rejects_matchers_for_events_that_ignore_them() -> None:
-    codex_group = codex.config.HookGroup(
-        matcher="anything",
-        hooks=[codex.config.CommandHook(command="python hook.py")],
-    )
-    with pytest.raises(ValidationError, match="ignores matchers"):
-        codex.config.HooksFile(hooks={"UserPromptSubmit": [codex_group]})
-
-    claude_group = claude_code.config.HookGroup(
-        matcher="anything",
-        hooks=[claude_code.config.CommandHook(command="python", args=["hook.py"])],
-    )
-    with pytest.raises(ValidationError, match="ignores matchers"):
-        claude_code.config.SettingsHooks(hooks={"UserPromptSubmit": [claude_group]})
-
-
-def test_models_accept_python_names_and_emit_provider_aliases() -> None:
+def test_models_accept_python_names_and_emit_host_aliases() -> None:
     output = codex.outputs.UserPromptSubmitOutput(
         hook_specific_output=codex.outputs.UserPromptSubmitSpecificOutput(
             hook_event_name="UserPromptSubmit",
@@ -97,17 +81,4 @@ def test_models_accept_python_names_and_emit_provider_aliases() -> None:
             "hookEventName": "UserPromptSubmit",
             "additionalContext": "Review tests before editing.",
         }
-    }
-
-    command = claude_code.config.CommandHook(
-        command="python",
-        async_=True,
-        condition="Bash(*)",
-    )
-
-    assert command.model_dump(by_alias=True, exclude_none=True) == {
-        "type": "command",
-        "command": "python",
-        "async": True,
-        "if": "Bash(*)",
     }

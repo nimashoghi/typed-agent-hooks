@@ -450,39 +450,6 @@ EVENT_NAMES: tuple[ClaudeEventName, ...] = (
     "ElicitationResult",
 )
 
-EVENT_NAME_BY_TYPE: dict[type[BaseInput], ClaudeEventName] = {
-    SessionStartInput: "SessionStart",
-    SetupInput: "Setup",
-    InstructionsLoadedInput: "InstructionsLoaded",
-    UserPromptSubmitInput: "UserPromptSubmit",
-    UserPromptExpansionInput: "UserPromptExpansion",
-    MessageDisplayInput: "MessageDisplay",
-    PreToolUseInput: "PreToolUse",
-    PermissionRequestInput: "PermissionRequest",
-    PostToolUseInput: "PostToolUse",
-    PostToolUseFailureInput: "PostToolUseFailure",
-    PostToolBatchInput: "PostToolBatch",
-    PermissionDeniedInput: "PermissionDenied",
-    NotificationInput: "Notification",
-    SubagentStartInput: "SubagentStart",
-    SubagentStopInput: "SubagentStop",
-    TaskCreatedInput: "TaskCreated",
-    TaskCompletedInput: "TaskCompleted",
-    StopInput: "Stop",
-    StopFailureInput: "StopFailure",
-    TeammateIdleInput: "TeammateIdle",
-    ConfigChangeInput: "ConfigChange",
-    CwdChangedInput: "CwdChanged",
-    FileChangedInput: "FileChanged",
-    WorktreeCreateInput: "WorktreeCreate",
-    WorktreeRemoveInput: "WorktreeRemove",
-    PreCompactInput: "PreCompact",
-    PostCompactInput: "PostCompact",
-    SessionEndInput: "SessionEnd",
-    ElicitationInput: "Elicitation",
-    ElicitationResultInput: "ElicitationResult",
-}
-
 
 def parse_input(data: JsonInput) -> AnyInput:
     """Strictly parse one Claude Code command-hook input payload."""

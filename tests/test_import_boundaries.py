@@ -22,7 +22,7 @@ def _loaded_modules(program: str) -> set[str]:
     return set(cast(list[str], decoded))
 
 
-def test_shared_import_does_not_load_provider_or_collection_modules() -> None:
+def test_shared_import_does_not_load_host_modules() -> None:
     loaded = _loaded_modules(
         """
         import json
@@ -36,8 +36,6 @@ def test_shared_import_does_not_load_provider_or_collection_modules() -> None:
     assert "typed_agent_hooks.shared" in loaded
     assert "typed_agent_hooks.codex" not in loaded
     assert "typed_agent_hooks.claude_code" not in loaded
-    assert "typed_agent_hooks.collection" not in loaded
-    assert "cyclopts" not in loaded
 
 
 def test_codex_dispatch_does_not_load_claude_code() -> None:
@@ -46,16 +44,15 @@ def test_codex_dispatch_does_not_load_claude_code() -> None:
         import json
         import sys
         from typed_agent_hooks import shared
-        from typed_agent_hooks.core import Provider
 
-        app = shared.HookApp(name="probe", providers=("codex",))
+        app = shared.HookApp(name="probe")
 
         @app.on(shared.events.PromptSubmitted)
         def prompt_submitted(event):
             return None
 
-        app.handle_json(
-            Provider.CODEX,
+        app.handle(
+            "codex",
             {
                 "session_id": "session",
                 "transcript_path": None,

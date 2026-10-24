@@ -146,19 +146,6 @@ EVENT_NAMES: tuple[CodexEventName, ...] = (
     "Stop",
 )
 
-EVENT_NAME_BY_TYPE: dict[type[BaseInput], CodexEventName] = {
-    SessionStartInput: "SessionStart",
-    SubagentStartInput: "SubagentStart",
-    PreToolUseInput: "PreToolUse",
-    PermissionRequestInput: "PermissionRequest",
-    PostToolUseInput: "PostToolUse",
-    PreCompactInput: "PreCompact",
-    PostCompactInput: "PostCompact",
-    UserPromptSubmitInput: "UserPromptSubmit",
-    SubagentStopInput: "SubagentStop",
-    StopInput: "Stop",
-}
-
 
 def parse_input(data: JsonInput) -> AnyInput:
     """Strictly parse one Codex command-hook input payload."""

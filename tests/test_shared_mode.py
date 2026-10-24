@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import pytest
 
@@ -8,6 +8,7 @@ from typed_agent_hooks import claude_code, codex, shared
 from typed_agent_hooks.shared.results import SharedOutputError
 
 FIXTURES = Path(__file__).parent / "fixtures"
+FIXTURE_BY_HOST = {"codex": "codex_inputs.json", "claude": "claude_code_inputs.json"}
 
 
 def _payloads(name: str) -> list[dict[str, object]]:
@@ -27,9 +28,28 @@ def test_codex_events_have_total_shared_mappings() -> None:
 
     # ToolCallFailed is Claude Code-only: Codex has no failure primitive and
     # reports failures inside ordinary PostToolUse responses.
-    assert {event.event_name for event in events} == set(shared.events.EVENT_NAMES) - {
-        "ToolCallFailed"
+    assert {type(event) for event in events} == set(shared.events.EVENT_TYPES) - {
+        shared.events.ToolCallFailed
     }
+
+
+@pytest.mark.parametrize("host", ["codex", "claude"])
+def test_native_event_names_match_the_adapters(host: Literal["codex", "claude"]) -> None:
+    for payload in _payloads(FIXTURE_BY_HOST[host]):
+        if host == "codex":
+            event = shared.from_codex(codex.parse_input(payload))
+        else:
+            event = shared.try_from_claude_code(claude_code.parse_input(payload))
+            if event is None:
+                continue
+        assert shared.native_event_name(type(event), host) == payload["hook_event_name"]
+
+
+def test_codex_has_no_native_tool_failure_event() -> None:
+    assert shared.native_event_name(shared.events.ToolCallFailed, "codex") is None
+    assert shared.native_event_name(shared.events.ToolCallFailed, "claude") == (
+        "PostToolUseFailure"
+    )
 
 
 def test_claude_only_event_is_not_coerced_into_shared_mode() -> None:
@@ -114,20 +134,16 @@ def test_compaction_context_error_points_to_context_capable_boundary() -> None:
     )
 
 
-def test_shared_app_requires_explicit_provider_at_runtime() -> None:
+def test_shared_app_handles_one_host_payload() -> None:
     app = shared.HookApp(name="test")
 
     @app.on(shared.events.PromptSubmitted)
-    def add_context(
-        _event: shared.events.AnyEvent,
-    ) -> shared.outputs.Result:
+    def add_context(_event: shared.events.PromptSubmitted) -> shared.outputs.Result:
         return shared.outputs.AddContext(text="Check project tests first.")
 
     payload = _payload("codex_inputs.json", "UserPromptSubmit")
-    # The public Provider enum is explicit; no provider auto-detection occurs.
-    from typed_agent_hooks.core import Provider
 
-    rendered = app.handle_json(Provider.CODEX, payload)
+    rendered = app.handle("codex", payload)
 
     assert rendered == (
         '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit",'
@@ -136,19 +152,19 @@ def test_shared_app_requires_explicit_provider_at_runtime() -> None:
 
 
 @pytest.mark.parametrize("source", ["startup", "resume", "clear", "compact", "fork"])
-@pytest.mark.parametrize("provider", ["codex", "claude_code"])
-def test_session_start_source_reaches_shared_handler(source: str, provider: str) -> None:
-    from typed_agent_hooks.core import Provider
-
+@pytest.mark.parametrize("host", ["codex", "claude"])
+def test_session_start_source_reaches_shared_handler(
+    source: str, host: Literal["codex", "claude"]
+) -> None:
     app = shared.HookApp(name="session-source")
 
     @app.on(shared.events.SessionStarted)
     def add_context(event: shared.events.SessionStarted) -> shared.outputs.Result:
         return shared.outputs.AddContext(text=f"Session source: {event.source}")
 
-    payload = _payload(f"{provider}_inputs.json", "SessionStart") | {"source": source}
+    payload = _payload(FIXTURE_BY_HOST[host], "SessionStart") | {"source": source}
 
-    rendered = app.handle_json(Provider(provider), payload)
+    rendered = app.handle(host, payload)
 
     assert rendered is not None
     assert json.loads(rendered) == {
@@ -159,7 +175,7 @@ def test_session_start_source_reaches_shared_handler(source: str, provider: str)
     }
 
 
-def test_shared_permission_decisions_render_for_both_providers() -> None:
+def test_shared_permission_decisions_render_for_both_hosts() -> None:
     codex_event = shared.from_codex(
         codex.parse_input(_payload("codex_inputs.json", "PermissionRequest"))
     )

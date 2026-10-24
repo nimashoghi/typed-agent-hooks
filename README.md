@@ -1,193 +1,127 @@
 # typed-agent-hooks
 
-`typed-agent-hooks` defines executable, code-first hooks for OpenAI Codex and Anthropic Claude Code. A hook's Python file owns its handlers, provider configuration, dependency environment, and executable entry point. There is no TOML manifest, import-string loader, or global installation CLI.
+`typed-agent-hooks` gives OpenAI Codex and Anthropic Claude Code hooks one set of typed events. A hook file handles shared events, such as `ToolCallCompleted`. The package parses the host payload, maps it to the shared event, calls the handler, and writes the output in the format of that host. A hook file never names a host.
 
-The package provides strict provider wire models, a conservative shared semantic API, preservation-oriented config reconciliation, ordered collections of independent hook executables, and an optional FastMCP bridge.
+The host files hold the native event, matcher, timeout and command. The package does not generate or install host configuration.
 
-FastMCP bridge handlers can inspect `event.context.response_available` on shared events. It is false when an event was buffered before the bridge became available: observers still run, but the original hook process has exited and returned context cannot reach the agent. Defer context and any "context delivered" state until a later event with a live response channel. The flag is transport metadata, separate from provider input, and does not acknowledge that a live response was received.
+## A hook file
 
-## One executable hook
-
-Put the dependencies in the executable with PEP 723 and define configuration beside the handler:
+Each hook is one executable PEP 723 file:
 
 ```python
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.11"
-# dependencies = [
-#   "cyclopts>=4.23.2,<5",
-#   "pydantic-core",
-#   "typed-agent-hooks==0.1.0",
-# ]
+# requires-python = ">=3.13"
+# dependencies = ["typed-agent-hooks==0.3.0"]
+# [tool.uv]
+# exclude-newer = "2026-11-01T00:00:00Z"
 # ///
-"""Add local project context to every submitted prompt."""
+"""Suggest the notebook when a Bash command runs inline Python."""
 
-import json
-from functools import partial
-
-from cyclopts import App
-from pydantic_core import to_jsonable_python
 from typed_agent_hooks import shared
 
-cli = App(
-    result_action=[
-        partial(json.dumps, default=to_jsonable_python, allow_nan=False),
-        print,
-        "return_zero",
+app = shared.HookApp(name="inline-python")
+
+
+@app.on(shared.events.ToolCallCompleted)
+def tool_completed(event: shared.events.ToolCallCompleted) -> shared.outputs.Result:
+    command = event.tool_input.get("command") if isinstance(event.tool_input, dict) else None
+    if not isinstance(command, str) or "python -c" not in command:
+        return None
+    return shared.outputs.AddContext(text="For multi-step Python work, use the notebook.")
+
+
+if __name__ == "__main__":
+    app.main()
+```
+
+Set `exclude-newer` to a date after the release that the file pins, because uv ignores releases that are newer than that date.
+
+## Host files
+
+The host files call the hook with the host name as the only argument. Codex, in `.codex/hooks.json`:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": ".agent-hooks/inline-python.py codex", "timeout": 5 }]
+      }
     ]
-)
-hooks = shared.HookApp(name="project-context")
-
-
-@hooks.on(shared.events.PromptSubmitted, timeout=10)
-def add_project_context(event: shared.events.PromptSubmitted) -> shared.outputs.Result:
-    """Return context derived from one submitted prompt."""
-
-    return shared.outputs.AddContext(text=f"Working directory: {event.context.cwd}")
-
-
-@cli.command
-def preview(prompt: str) -> str:
-    """Preview the domain behavior without constructing a provider payload."""
-
-    return f"Would add context for {prompt!r}"
-
-
-if __name__ == "__main__":
-    hooks.main(cli)
+  }
+}
 ```
 
-Create and commit the adjacent script lockfile with `uv lock --script project_context.py`. Pin the desired TAH release in the PEP 723 declaration and refresh the lock when intentionally updating it; ordinary hook invocations then reuse the resolved installation.
+Claude Code, in `.claude/settings.json`:
 
-Make the file executable and run its ordinary domain CLI directly:
-
-```console
-./project_context.py preview "fix the tests"
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.agent-hooks/inline-python.py claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
 ```
 
-`hooks.main(cli)` leaves ordinary arguments untouched for Cyclopts. Generated provider commands use a private `_typed-agent-hooks` protocol to invoke the same `hooks` object. That protocol is an implementation boundary, not a user-facing CLI.
+## What `main()` does
 
-The Python API is direct:
+`app.main()` reads the host from its first argument (`codex` or `claude`) and the payload from stdin. The payload's `hook_event_name` selects the event. `main()` calls the handler of that event and writes the host output to stdout.
+
+- A handler that returns `None` writes nothing.
+- A failure fails open: one line on stderr, nothing on stdout, exit 0. Failures include a payload that does not parse, an event that has no handler, an event that has no shared equivalent, a handler exception, and an output that the event cannot carry.
+- A missing or unknown host argument is a programming error: a usage line on stderr and exit 1. Both hosts read exit 1 as a non-blocking error, so a wrong host file does not block a tool call or a prompt.
+
+`app.handle(host, payload)` does the same work in the current process and raises on each failure. Use it in tests.
+
+## Check host files without a host
+
+A test can load a hook file without running it and compare its events with the host files:
 
 ```python
-tool = ipi.import_path("/path/to/project_context.py")
-tool.preview("fix the tests")
-tool.hooks.render("codex", executable=tool.__file__)
+import runpy
+
+from typed_agent_hooks import shared
+
+app = runpy.run_path(".agent-hooks/inline-python.py")["app"]
+for event_type in app.handlers:
+    print(shared.native_event_name(event_type, "codex"), shared.native_event_name(event_type, "claude"))
 ```
 
-Keep docstrings on public functions. Cyclopts uses them for CLI help, and notebook callers get the same documentation from Python.
+`app.handlers` maps each shared event type to its handler. `shared.native_event_name(event_type, host)` returns the native event name, or `None` when the host has no such event.
 
-## Registration metadata
+## Shared events
 
-`HookApp.on` accepts shared defaults plus explicit provider-only overrides:
+| Shared event (`shared.events`) | Codex | Claude Code | `AddContext` |
+| --- | --- | --- | --- |
+| `SessionStarted` | `SessionStart` | `SessionStart` | yes |
+| `PromptSubmitted` | `UserPromptSubmit` | `UserPromptSubmit` | yes |
+| `ToolCallProposed` | `PreToolUse` | `PreToolUse` | yes |
+| `PermissionRequested` | `PermissionRequest` | `PermissionRequest` | no |
+| `ToolCallCompleted` | `PostToolUse` | `PostToolUse` | yes |
+| `ToolCallFailed` | none | `PostToolUseFailure` | no |
+| `CompactionStarting` | `PreCompact` | `PreCompact` | no |
+| `CompactionFinished` | `PostCompact` | `PostCompact` | no |
+| `SubagentStarted` | `SubagentStart` | `SubagentStart` | yes |
+| `SubagentStopped` | `SubagentStop` | `SubagentStop` | no |
+| `TurnStopped` | `Stop` | `Stop` | no |
 
-```python
-@hooks.on(
-    shared.events.ToolCallProposed,
-    timeout=20,
-    status_message="Checking tool call",
-    codex=shared.CodexOptions(matcher="Bash"),
-    claude_code=shared.ClaudeCodeOptions(matcher="Bash|Read"),
-)
-def check_tool(event: shared.events.ToolCallProposed) -> shared.outputs.Result: ...
-```
+Every event carries `event.context` with the host, session ID, working directory and other session data. A handler returns one of the results in `shared.outputs`: `AddContext`, `SystemMessage`, `Block`, `AllowTool`, `DenyTool`, `AllowPermission`, `DenyPermission`, `Stop`, or `None`. A result that an event cannot carry raises `SharedOutputError`. The package does not guess a translation.
 
-An app declares its enabled providers when necessary:
+## Host wire schemas
 
-```python
-hooks = shared.HookApp(name="codex-only", providers=("codex",))
-```
-
-Shared events that do not exist on an enabled provider fail during rendering. Provider-specific options on a disabled provider also fail. The library does not guess a lossy translation.
-
-For direct programmatic installation, call `HookApp.install` or `HookApp.uninstall`. Pass the executable explicitly so the Python call has the same information as the provider config:
-
-```python
-hooks.install(executable=__file__, provider="all", scope="project")
-```
-
-Installation replaces only commands marked with the app's stable name, preserves unrelated JSON fields and hooks, writes atomically, and reconciles every selected provider. Disabling a provider therefore removes that app's stale entries from the provider config.
-
-## Ordered collections
-
-Use a small executable installer when several hooks have independent dependencies or ownership:
-
-```python
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.11"
-# dependencies = [
-#   "typed-agent-hooks==0.1.0",
-# ]
-# ///
-"""Install this repository's hooks in deterministic order."""
-
-from pathlib import Path
-
-from typed_agent_hooks import Collection
-
-root = Path(__file__).parent
-hooks = Collection(
-    name="project-hooks",
-    apps=(root / "first.py", root / "second.py"),
-)
-
-if __name__ == "__main__":
-    hooks.main()
-```
-
-The CLI and Python API are the same bound methods:
-
-```console
-./install.py install --scope project
-./install.py uninstall --scope project
-```
-
-```python
-installer = ipi.import_path("/path/to/install.py")
-installer.hooks.install(scope="project")
-```
-
-Collection installation executes each child in its own PEP 723 environment, validates every description before writing anything, preserves declared order, rejects duplicate names and paths, and removes members deleted from the collection.
-
-## FastMCP forwarding
-
-`typed_agent_hooks.fastmcp.attach` connects a running FastMCP server to a normal hook application. `ForwardingHooks` installs one forwarding command for every native event supported by each provider:
-
-```python
-from typed_agent_hooks.fastmcp import ForwardingHooks, attach
-
-attach(server, hooks, provider="codex", server_name="ipi")
-
-forwarding = ForwardingHooks(
-    name="ipi",
-    server_name="ipi",
-    timeout=70,
-    startup_wait=30,
-    response_timeout=35,
-)
-forwarding.install(provider="all", scope="user")
-```
-
-The dedicated `tah-fastmcp-forward` entry point is also a direct Cyclopts view of the importable `forward` function:
-
-```console
-tah-fastmcp-forward - --provider codex --server-name ipi
-```
-
-```python
-from typed_agent_hooks.fastmcp import forward
-
-output = forward(payload, provider="codex", server_name="ipi")
-```
-
-`-` means stdin only at the CLI boundary. The forwarder is fail-open: an absent, slow, dead, unsupported, or ambiguous local bridge returns no output and does not block the harness. Invalid explicit timeout arguments still fail before forwarding.
-
-The bridge requires the `fastmcp` extra, which now targets FastMCP 4 and MCP SDK 2. It reads Codex thread metadata from the request mapping. The forwarding subprocess itself imports Cyclopts and the small TAH rendezvous modules, but does not import FastMCP.
-
-## Provider schemas
-
-Provider-native schemas remain available from `typed_agent_hooks.codex` and `typed_agent_hooks.claude_code`. Wire inputs are tolerant readers: unknown provider fields are ignored while declared fields remain strictly typed. Outputs are closed and exact. Use the shared API when one semantic handler is valid for both providers; use the provider-native models when their behavior genuinely differs.
+`typed_agent_hooks.codex` and `typed_agent_hooks.claude_code` hold the native schemas of each host. Wire inputs ignore unknown fields, but declared fields stay strictly typed. Outputs are closed and exact.
 
 ## Development
 
@@ -196,15 +130,3 @@ uv run ruff check .
 uv run ty check
 uv run pytest -q
 ```
-
-## Windows shared hook commands
-
-Shared Codex hooks now include a default `commandWindows` that launches Windows PowerShell with a UTF-16LE encoded command. Executable and argument tokens are quoted as PowerShell literals, preserving paths containing spaces, apostrophes, and shell metacharacters; the wrapper forwards the child exit status. An explicitly supplied `command_windows` still overrides this default. Claude Code continues to use its direct `command`/`args` form.
-
-The outer command is usable from Codex's default CMD launcher and an explicitly selected PowerShell launcher. Native execution is covered by `tests/test_windows_command.py`; that test skips on other platforms. Provider behavior was inspected in Codex commit `0337192dfd10e12ac633dcd159fa6d6120dbfe11`, `codex-rs/hooks/src/engine/command_runner.rs` and `codex-rs/core/src/shell.rs`. PowerShell encoding follows [Microsoft's powershell.exe documentation](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_powershell_exe?view=powershell-5.1).
-
-## Asynchronous Codex startup forwarding
-
-`ForwardingHooks(..., codex_async_events=("SessionStart", "SubagentStart"), startup_wait=300)` renders those Codex command hooks with native `"async": true`. Other events and Claude rendering retain their existing behavior. Keep a positive startup wait so the background forwarder can reach a bridge that is still starting. Native Codex delivers completed asynchronous context at a later context boundary; it cannot change a model request already sent.
-
-The pending prompt queue creates every rendezvous directory with the same ownership and mode required by the bridge. This allows the first prompt to arrive before the MCP server without preventing that server from starting.

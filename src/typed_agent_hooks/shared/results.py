@@ -8,11 +8,11 @@ from .events import AnyEvent, SharedEventName
 
 
 class SharedOutputError(ValueError):
-    """Raised when an output intent is not portable for an event/provider pair."""
+    """Raised when an output intent is not portable for an event and host."""
 
 
 class SystemMessage(StrictModel):
-    """Show a provider system message without changing control flow."""
+    """Show a host system message without changing control flow."""
 
     kind: Literal["system_message"] = "system_message"
     message: str
@@ -55,14 +55,14 @@ class DenyTool(StrictModel):
 
 
 class AllowPermission(StrictModel):
-    """Approve a provider permission request without provider-only mutations."""
+    """Approve a host permission request without host-only mutations."""
 
     kind: Literal["allow_permission"] = "allow_permission"
     system_message: str | None = None
 
 
 class DenyPermission(StrictModel):
-    """Reject a provider permission request with an explicit reason."""
+    """Reject a host permission request with an explicit reason."""
 
     kind: Literal["deny_permission"] = "deny_permission"
     reason: str
@@ -70,7 +70,7 @@ class DenyPermission(StrictModel):
 
 
 class Stop(StrictModel):
-    """Ask the provider to stop processing with a reason."""
+    """Ask the host to stop processing with a reason."""
 
     kind: Literal["stop"] = "stop"
     reason: str
@@ -127,7 +127,7 @@ def require_event(event: AnyEvent, allowed: frozenset[SharedEventName], output: 
         valid_events = ", ".join(sorted(allowed))
         message = (
             f"{type(output).__name__} is not portable for {event.event_name} "
-            f"({event.context.provider.value} {event.context.source_event}); "
+            f"({event.context.host} {event.context.source_event}); "
             f"valid events: {valid_events}"
         )
         if isinstance(output, AddContext) and event.event_name == "CompactionFinished":
