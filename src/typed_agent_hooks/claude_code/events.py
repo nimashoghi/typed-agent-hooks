@@ -1,6 +1,6 @@
 """Claude Code command-hook input schemas: tolerant readers, strict declared fields."""
 
-from typing import Annotated, Literal, TypeAlias, cast
+from typing import Literal, TypeAlias, cast
 
 from pydantic import Field
 
@@ -22,17 +22,12 @@ ClaudeEventName: TypeAlias = Literal[
 PermissionMode: TypeAlias = Literal[
     "default", "plan", "acceptEdits", "auto", "dontAsk", "bypassPermissions"
 ]
-EffortLevel: TypeAlias = Literal["low", "medium", "high", "xhigh", "max"]
 StartSource: TypeAlias = Literal["startup", "resume", "clear", "compact", "fork"]
 CompactTrigger: TypeAlias = Literal["manual", "auto"]
 
 
-class Effort(InputModel):
-    level: EffortLevel
-
-
 class BaseInput(InputModel):
-    """Documented common Claude Code command-hook input fields."""
+    """Common Claude Code command-hook input fields that the shared events read."""
 
     session_id: str
     transcript_path: str
@@ -41,60 +36,8 @@ class BaseInput(InputModel):
     prompt_id: str | None = None
     scratchpad_dir: str | None = None
     permission_mode: PermissionMode | None = None
-    effort: Effort | None = None
     agent_id: str | None = None
     agent_type: str | None = None
-
-
-class PermissionRule(InputModel):
-    tool_name: str = Field(validation_alias="toolName", serialization_alias="toolName")
-    rule_content: str | None = Field(
-        default=None, validation_alias="ruleContent", serialization_alias="ruleContent"
-    )
-
-
-class RulesPermissionUpdate(InputModel):
-    type: Literal["addRules", "replaceRules", "removeRules"]
-    rules: list[PermissionRule]
-    behavior: Literal["allow", "deny", "ask"]
-    destination: Literal["session", "localSettings", "projectSettings", "userSettings"]
-
-
-class SetModePermissionUpdate(InputModel):
-    type: Literal["setMode"]
-    mode: PermissionMode
-    destination: Literal["session", "localSettings", "projectSettings", "userSettings"]
-
-
-class DirectoryPermissionUpdate(InputModel):
-    type: Literal["addDirectories", "removeDirectories"]
-    directories: list[str]
-    destination: Literal["session", "localSettings", "projectSettings", "userSettings"]
-
-
-PermissionUpdate: TypeAlias = Annotated[
-    RulesPermissionUpdate | SetModePermissionUpdate | DirectoryPermissionUpdate,
-    Field(discriminator="type"),
-]
-
-
-class BackgroundTask(InputModel):
-    id: str
-    type: str
-    status: str
-    description: str
-    command: str | None = None
-    agent_type: str | None = None
-    server: str | None = None
-    tool: str | None = None
-    name: str | None = None
-
-
-class SessionCron(InputModel):
-    id: str
-    schedule: str
-    recurring: bool
-    prompt: str
 
 
 class SessionStartInput(BaseInput):
@@ -120,7 +63,6 @@ class PermissionRequestInput(BaseInput):
     hook_event_name: Literal["PermissionRequest"]
     tool_name: str
     tool_input: Json
-    permission_suggestions: list[PermissionUpdate] | None = None
 
 
 class PostToolUseInput(BaseInput):
@@ -155,16 +97,12 @@ class SubagentStopInput(BaseInput):
     agent_type: str
     agent_transcript_path: str
     last_assistant_message: str | None
-    background_tasks: list[BackgroundTask] | None = None
-    session_crons: list[SessionCron] | None = None
 
 
 class StopInput(BaseInput):
     hook_event_name: Literal["Stop"]
     stop_hook_active: bool
     last_assistant_message: str | None
-    background_tasks: list[BackgroundTask] | None = None
-    session_crons: list[SessionCron] | None = None
 
 
 class PreCompactInput(BaseInput):

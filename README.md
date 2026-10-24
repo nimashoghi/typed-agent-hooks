@@ -123,7 +123,7 @@ Every event carries `event.context` with the host, session ID, working directory
 
 ## Host wire schemas
 
-`typed_agent_hooks.codex` and `typed_agent_hooks.claude_code` hold the native schemas of each host, for the events in the table above. Wire inputs ignore unknown fields, but declared fields stay strictly typed. Outputs are closed and exact. A Claude Code event with no shared equivalent, such as `Notification`, is not modeled: `parse_input` raises `ValueError`, and `main()` fails open.
+`typed_agent_hooks.codex` and `typed_agent_hooks.claude_code` hold the native schemas of each host, for the events in the table above. An input model declares only the fields that the shared events read. It ignores other fields, so a host change to a field that no hook reads cannot break a hook. Declared fields stay strictly typed. An output model holds only the fields that the shared results write, and it is closed and exact. A Claude Code event with no shared equivalent, such as `Notification`, is not modeled: `parse_input` raises `ValueError`, and `main()` fails open.
 
 ## Development
 

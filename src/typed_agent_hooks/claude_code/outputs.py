@@ -4,12 +4,12 @@ from typing import Literal, TypeAlias
 
 from pydantic import Field, model_validator
 
-from typed_agent_hooks.core import ClaudeCommonOutput, Json, StrictModel, render_json
+from typed_agent_hooks.core import CommonOutput, Json, StrictModel, render_json
 
-from .events import ClaudeEventName, PermissionUpdate
+from .events import ClaudeEventName
 
 
-class _BlockableOutput(ClaudeCommonOutput):
+class _BlockableOutput(CommonOutput):
     decision: Literal["block"] | None = None
     reason: str | None = None
 
@@ -27,23 +27,9 @@ class SessionStartSpecificOutput(StrictModel):
     additional_context: str | None = Field(
         default=None, validation_alias="additionalContext", serialization_alias="additionalContext"
     )
-    initial_user_message: str | None = Field(
-        default=None,
-        validation_alias="initialUserMessage",
-        serialization_alias="initialUserMessage",
-    )
-    session_title: str | None = Field(
-        default=None, validation_alias="sessionTitle", serialization_alias="sessionTitle"
-    )
-    watch_paths: list[str] | None = Field(
-        default=None, validation_alias="watchPaths", serialization_alias="watchPaths"
-    )
-    reload_skills: bool | None = Field(
-        default=None, validation_alias="reloadSkills", serialization_alias="reloadSkills"
-    )
 
 
-class SessionStartOutput(ClaudeCommonOutput):
+class SessionStartOutput(CommonOutput):
     hook_specific_output: SessionStartSpecificOutput | None = Field(
         default=None,
         validation_alias="hookSpecificOutput",
@@ -57,14 +43,6 @@ class UserPromptSubmitSpecificOutput(StrictModel):
     )
     additional_context: str | None = Field(
         default=None, validation_alias="additionalContext", serialization_alias="additionalContext"
-    )
-    session_title: str | None = Field(
-        default=None, validation_alias="sessionTitle", serialization_alias="sessionTitle"
-    )
-    suppress_original_prompt: bool | None = Field(
-        default=None,
-        validation_alias="suppressOriginalPrompt",
-        serialization_alias="suppressOriginalPrompt",
     )
 
 
@@ -80,7 +58,7 @@ class PreToolUseSpecificOutput(StrictModel):
     hook_event_name: Literal["PreToolUse"] = Field(
         validation_alias="hookEventName", serialization_alias="hookEventName"
     )
-    permission_decision: Literal["allow", "deny", "ask", "defer"] | None = Field(
+    permission_decision: Literal["allow", "deny"] | None = Field(
         default=None,
         validation_alias="permissionDecision",
         serialization_alias="permissionDecision",
@@ -98,13 +76,13 @@ class PreToolUseSpecificOutput(StrictModel):
     )
 
     @model_validator(mode="after")
-    def _updated_input_requires_allow_or_ask(self) -> "PreToolUseSpecificOutput":
-        if self.updated_input is not None and self.permission_decision not in {"allow", "ask"}:
-            raise ValueError("updatedInput is only valid for allow/ask")
+    def _updated_input_requires_allow(self) -> "PreToolUseSpecificOutput":
+        if self.updated_input is not None and self.permission_decision != "allow":
+            raise ValueError("updatedInput requires permissionDecision='allow'")
         return self
 
 
-class PreToolUseOutput(ClaudeCommonOutput):
+class PreToolUseOutput(CommonOutput):
     hook_specific_output: PreToolUseSpecificOutput | None = Field(
         default=None,
         validation_alias="hookSpecificOutput",
@@ -114,25 +92,12 @@ class PreToolUseOutput(ClaudeCommonOutput):
 
 class PermissionRequestDecision(StrictModel):
     behavior: Literal["allow", "deny"]
-    updated_input: Json | None = Field(
-        default=None, validation_alias="updatedInput", serialization_alias="updatedInput"
-    )
-    updated_permissions: list[PermissionUpdate] | None = Field(
-        default=None,
-        validation_alias="updatedPermissions",
-        serialization_alias="updatedPermissions",
-    )
     message: str | None = None
-    interrupt: bool | None = None
 
     @model_validator(mode="after")
-    def _behavior_fields_are_consistent(self) -> "PermissionRequestDecision":
-        if self.behavior == "allow":
-            if self.message is not None or self.interrupt is not None:
-                raise ValueError("allow cannot include message or interrupt")
-            return self
-        if self.updated_input is not None or self.updated_permissions is not None:
-            raise ValueError("deny cannot include updatedInput or updatedPermissions")
+    def _allow_has_no_message(self) -> "PermissionRequestDecision":
+        if self.behavior == "allow" and self.message is not None:
+            raise ValueError("allow cannot include message")
         return self
 
 
@@ -143,7 +108,7 @@ class PermissionRequestSpecificOutput(StrictModel):
     decision: PermissionRequestDecision
 
 
-class PermissionRequestOutput(ClaudeCommonOutput):
+class PermissionRequestOutput(CommonOutput):
     hook_specific_output: PermissionRequestSpecificOutput | None = Field(
         default=None,
         validation_alias="hookSpecificOutput",
@@ -158,14 +123,6 @@ class PostToolUseSpecificOutput(StrictModel):
     additional_context: str | None = Field(
         default=None, validation_alias="additionalContext", serialization_alias="additionalContext"
     )
-    updated_tool_output: Json | None = Field(
-        default=None, validation_alias="updatedToolOutput", serialization_alias="updatedToolOutput"
-    )
-    updated_mcp_tool_output: Json | None = Field(
-        default=None,
-        validation_alias="updatedMCPToolOutput",
-        serialization_alias="updatedMCPToolOutput",
-    )
 
 
 class PostToolUseOutput(_BlockableOutput):
@@ -176,21 +133,8 @@ class PostToolUseOutput(_BlockableOutput):
     )
 
 
-class PostToolUseFailureSpecificOutput(StrictModel):
-    hook_event_name: Literal["PostToolUseFailure"] = Field(
-        validation_alias="hookEventName", serialization_alias="hookEventName"
-    )
-    additional_context: str = Field(
-        validation_alias="additionalContext", serialization_alias="additionalContext"
-    )
-
-
-class PostToolUseFailureOutput(ClaudeCommonOutput):
-    hook_specific_output: PostToolUseFailureSpecificOutput | None = Field(
-        default=None,
-        validation_alias="hookSpecificOutput",
-        serialization_alias="hookSpecificOutput",
-    )
+class PostToolUseFailureOutput(CommonOutput):
+    """Structured output for ``PostToolUseFailure``."""
 
 
 class SubagentStartSpecificOutput(StrictModel):
@@ -202,7 +146,7 @@ class SubagentStartSpecificOutput(StrictModel):
     )
 
 
-class SubagentStartOutput(ClaudeCommonOutput):
+class SubagentStartOutput(CommonOutput):
     hook_specific_output: SubagentStartSpecificOutput | None = Field(
         default=None,
         validation_alias="hookSpecificOutput",
@@ -248,7 +192,7 @@ class PreCompactOutput(_BlockableOutput):
     """Structured output for ``PreCompact``."""
 
 
-class PostCompactOutput(ClaudeCommonOutput):
+class PostCompactOutput(CommonOutput):
     """Structured output for ``PostCompact``."""
 
 

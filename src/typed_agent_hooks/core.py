@@ -50,7 +50,7 @@ JsonInput: TypeAlias = str | bytes | Mapping[str, object]
 
 
 class CommonOutput(StrictModel):
-    """Common structured command-hook output fields."""
+    """Structured command-hook output fields common to both hosts."""
 
     continue_: bool | None = Field(
         default=None, validation_alias="continue", serialization_alias="continue"
@@ -60,17 +60,6 @@ class CommonOutput(StrictModel):
     )
     system_message: str | None = Field(
         default=None, validation_alias="systemMessage", serialization_alias="systemMessage"
-    )
-    suppress_output: bool | None = Field(
-        default=None, validation_alias="suppressOutput", serialization_alias="suppressOutput"
-    )
-
-
-class ClaudeCommonOutput(CommonOutput):
-    """Common Claude Code output fields."""
-
-    terminal_sequence: str | None = Field(
-        default=None, validation_alias="terminalSequence", serialization_alias="terminalSequence"
     )
 
 

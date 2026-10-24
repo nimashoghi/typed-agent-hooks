@@ -10,13 +10,9 @@ from .events import CodexEventName
 
 
 class AdditionalContext(StrictModel):
-    hook_event_name: Literal[
-        "SessionStart",
-        "SubagentStart",
-        "PreToolUse",
-        "PostToolUse",
-        "UserPromptSubmit",
-    ] = Field(validation_alias="hookEventName", serialization_alias="hookEventName")
+    hook_event_name: Literal["SessionStart", "SubagentStart"] = Field(
+        validation_alias="hookEventName", serialization_alias="hookEventName"
+    )
     additional_context: str = Field(
         validation_alias="additionalContext", serialization_alias="additionalContext"
     )
@@ -73,18 +69,11 @@ class PreToolUseOutput(StrictModel):
     system_message: str | None = Field(
         default=None, validation_alias="systemMessage", serialization_alias="systemMessage"
     )
-    decision: Literal["block"] | None = None
-    reason: str | None = None
     hook_specific_output: PreToolUseDecision | None = Field(
         default=None,
         validation_alias="hookSpecificOutput",
         serialization_alias="hookSpecificOutput",
     )
-
-    @model_validator(mode="after")
-    def _block_requires_reason(self) -> "PreToolUseOutput":
-        _validate_block(self.decision, self.reason)
-        return self
 
 
 class PermissionDecision(StrictModel):
