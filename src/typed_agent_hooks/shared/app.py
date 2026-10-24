@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import contextlib
+import os
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
@@ -76,8 +77,8 @@ class HookApp:
     def main(self) -> None:
         """Run as a hook command: ``HOOK_FILE codex|claude`` with the payload on stdin.
 
-        Writes the host output, if any, to stdout. What a handler prints goes
-        to stderr. Any failure after the host argument is read (a bad payload,
+        Writes the host output, if any, to stdout. What a handler or its child
+        processes print goes to stderr. Any failure after the host argument is read (a bad payload,
         an event with no handler, a handler exception or ``sys.exit``, an
         output the event cannot carry) fails open: one line on stderr, nothing
         on stdout, exit 0. A missing or unknown host argument is a programming
@@ -92,9 +93,7 @@ class HookApp:
             raise SystemExit(1)
         host = cast(Host, args[0])
         try:
-            # Both hosts read stdout as the hook output, so a handler's print
-            # must not reach it.
-            with contextlib.redirect_stdout(sys.stderr):
+            with _stdout_to_stderr():
                 output = self.handle(host, sys.stdin.buffer.read())
             if output is not None:
                 # Both hosts read hook stdout as UTF-8, whatever the locale.
@@ -103,3 +102,21 @@ class HookApp:
         except (Exception, SystemExit) as error:
             detail = " ".join(str(error).split())
             print(f"{self.name}: {type(error).__name__}: {detail}", file=sys.stderr)
+
+
+@contextlib.contextmanager
+def _stdout_to_stderr() -> Iterator[None]:
+    """Send what this process and its children write to stdout to stderr.
+
+    Both hosts read stdout as the hook output, so only that output may reach it.
+    """
+
+    sys.stdout.flush()
+    saved = os.dup(1)
+    os.dup2(2, 1)
+    try:
+        yield
+    finally:
+        sys.stdout.flush()
+        os.dup2(saved, 1)
+        os.close(saved)

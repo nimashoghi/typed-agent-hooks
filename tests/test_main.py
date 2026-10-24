@@ -14,6 +14,9 @@ FIXTURES = Path(__file__).parent / "fixtures"
 FIXTURE_BY_HOST = {"codex": "codex_inputs.json", "claude": "claude_code_inputs.json"}
 
 HOOK = """\
+import subprocess
+import sys
+
 from typed_agent_hooks import shared
 
 app = shared.HookApp(name="probe")
@@ -42,6 +45,7 @@ def tool_completed(event):
 @app.on(shared.events.PermissionRequested)
 def permission_requested(event):
     print("checking the request")
+    subprocess.run([sys.executable, "-c", "print('child output')"], check=True)
     return shared.outputs.AllowPermission()
 
 
@@ -53,6 +57,7 @@ def compaction_starting(event):
 @app.on(shared.events.SubagentStopped)
 def subagent_stopped(event):
     print("partial context")
+    subprocess.run([sys.executable, "-c", "print('child context')"], check=True)
     raise SystemExit(2)
 
 
@@ -109,10 +114,11 @@ def test_context_output_matches_the_host_wire(
 
 
 @pytest.mark.parametrize("host", ["codex", "claude"])
-def test_handler_print_goes_to_stderr(hook: Path, host: str) -> None:
+def test_handler_and_child_output_go_to_stderr(hook: Path, host: str) -> None:
     result = _run(hook, host, stdin=json.dumps(_payload(host, "PermissionRequest")))
 
-    assert (result.returncode, result.stderr) == (0, "checking the request\n")
+    assert result.returncode == 0
+    assert sorted(result.stderr.splitlines()) == ["checking the request", "child output"]
     assert json.loads(result.stdout) == {
         "hookSpecificOutput": {
             "hookEventName": "PermissionRequest",
@@ -122,11 +128,13 @@ def test_handler_print_goes_to_stderr(hook: Path, host: str) -> None:
 
 
 @pytest.mark.parametrize("host", ["codex", "claude"])
-def test_handler_exit_fails_open_without_its_print(hook: Path, host: str) -> None:
+def test_handler_exit_fails_open_without_its_output(hook: Path, host: str) -> None:
     result = _run(hook, host, stdin=json.dumps(_payload(host, "SubagentStop")))
 
     assert (result.returncode, result.stdout) == (0, "")
-    assert result.stderr == "partial context\nprobe: SystemExit: 2\n"
+    *printed, error = result.stderr.splitlines()
+    assert sorted(printed) == ["child context", "partial context"]
+    assert error == "probe: SystemExit: 2"
 
 
 @pytest.mark.parametrize("host", ["codex", "claude"])
