@@ -2,9 +2,9 @@ import json
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from typed_agent_hooks import claude_code, codex
+from typed_agent_hooks import claude_code, codex, shared
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -21,7 +21,7 @@ def test_all_codex_fixture_events_parse_strictly() -> None:
 
     parsed = [codex.parse_input(payload) for payload in payloads]
 
-    assert {event.hook_event_name for event in parsed} == set(codex.EVENT_NAMES)
+    assert {event.hook_event_name for event in parsed} == set(codex.INPUT_TYPES)
 
 
 def test_all_claude_code_fixture_events_parse_strictly() -> None:
@@ -29,7 +29,7 @@ def test_all_claude_code_fixture_events_parse_strictly() -> None:
 
     parsed = [claude_code.parse_input(payload) for payload in payloads]
 
-    assert {event.hook_event_name for event in parsed} == set(claude_code.EVENT_NAMES)
+    assert {event.hook_event_name for event in parsed} == set(claude_code.INPUT_TYPES)
 
 
 @pytest.mark.parametrize(
@@ -64,7 +64,7 @@ def test_host_inputs_still_reject_declared_field_type_drift() -> None:
 def test_claude_session_start_rejects_invalid_sources(source: object) -> None:
     payload = _payloads("claude_code_inputs.json")[0] | {"source": source}
 
-    with pytest.raises(ValidationError, match="SessionStart.source"):
+    with pytest.raises(ValidationError, match="SessionStartInput\nsource"):
         claude_code.parse_input(payload)
 
 
@@ -82,3 +82,33 @@ def test_models_accept_python_names_and_emit_host_aliases() -> None:
             "additionalContext": "Review tests before editing.",
         }
     }
+
+
+@pytest.mark.parametrize("parser", [codex.parse_input, claude_code.parse_input])
+@pytest.mark.parametrize("name", ["Unknown", 7, None])
+def test_unknown_hook_event_names_are_rejected(parser, name: object) -> None:
+    with pytest.raises(ValueError, match="hook event"):
+        parser({"hook_event_name": name})
+
+
+def test_every_deferred_model_schema_builds() -> None:
+    # Models defer their schemas to first use. Build each one here, so that a
+    # broken schema fails this test and not a hook run.
+    modules = [
+        codex.events,
+        codex.outputs,
+        claude_code.events,
+        claude_code.outputs,
+        shared.events,
+        shared.outputs,
+    ]
+    models = {
+        value
+        for module in modules
+        for value in vars(module).values()
+        if isinstance(value, type) and issubclass(value, BaseModel)
+    }
+
+    assert len(models) > 100
+    for model in models:
+        assert model.model_rebuild(force=True) is True, model

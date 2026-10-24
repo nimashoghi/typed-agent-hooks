@@ -1,8 +1,8 @@
 """Claude Code command-hook input schemas: tolerant readers, strict declared fields."""
 
-from typing import Annotated, Literal, TypeAlias
+from typing import Annotated, Literal, TypeAlias, cast
 
-from pydantic import Field, TypeAdapter, model_validator
+from pydantic import Field, model_validator
 
 from typed_agent_hooks.core import InputModel, Json, JsonInput, parse_json_object
 
@@ -382,7 +382,7 @@ class ElicitationResultInput(BaseInput):
         return self
 
 
-AnyInput: TypeAlias = Annotated[
+AnyInput: TypeAlias = (
     SessionStartInput
     | SetupInput
     | InstructionsLoadedInput
@@ -412,46 +412,54 @@ AnyInput: TypeAlias = Annotated[
     | PostCompactInput
     | SessionEndInput
     | ElicitationInput
-    | ElicitationResultInput,
-    Field(discriminator="hook_event_name"),
-]
-
-INPUT_ADAPTER: TypeAdapter[AnyInput] = TypeAdapter(AnyInput)
-EVENT_NAMES: tuple[ClaudeEventName, ...] = (
-    "SessionStart",
-    "Setup",
-    "InstructionsLoaded",
-    "UserPromptSubmit",
-    "UserPromptExpansion",
-    "MessageDisplay",
-    "PreToolUse",
-    "PermissionRequest",
-    "PostToolUse",
-    "PostToolUseFailure",
-    "PostToolBatch",
-    "PermissionDenied",
-    "Notification",
-    "SubagentStart",
-    "SubagentStop",
-    "TaskCreated",
-    "TaskCompleted",
-    "Stop",
-    "StopFailure",
-    "TeammateIdle",
-    "ConfigChange",
-    "CwdChanged",
-    "FileChanged",
-    "WorktreeCreate",
-    "WorktreeRemove",
-    "PreCompact",
-    "PostCompact",
-    "SessionEnd",
-    "Elicitation",
-    "ElicitationResult",
+    | ElicitationResultInput
 )
+
+INPUT_TYPES: dict[str, type[BaseInput]] = {
+    "SessionStart": SessionStartInput,
+    "Setup": SetupInput,
+    "InstructionsLoaded": InstructionsLoadedInput,
+    "UserPromptSubmit": UserPromptSubmitInput,
+    "UserPromptExpansion": UserPromptExpansionInput,
+    "MessageDisplay": MessageDisplayInput,
+    "PreToolUse": PreToolUseInput,
+    "PermissionRequest": PermissionRequestInput,
+    "PostToolUse": PostToolUseInput,
+    "PostToolUseFailure": PostToolUseFailureInput,
+    "PostToolBatch": PostToolBatchInput,
+    "PermissionDenied": PermissionDeniedInput,
+    "Notification": NotificationInput,
+    "SubagentStart": SubagentStartInput,
+    "SubagentStop": SubagentStopInput,
+    "TaskCreated": TaskCreatedInput,
+    "TaskCompleted": TaskCompletedInput,
+    "Stop": StopInput,
+    "StopFailure": StopFailureInput,
+    "TeammateIdle": TeammateIdleInput,
+    "ConfigChange": ConfigChangeInput,
+    "CwdChanged": CwdChangedInput,
+    "FileChanged": FileChangedInput,
+    "WorktreeCreate": WorktreeCreateInput,
+    "WorktreeRemove": WorktreeRemoveInput,
+    "PreCompact": PreCompactInput,
+    "PostCompact": PostCompactInput,
+    "SessionEnd": SessionEndInput,
+    "Elicitation": ElicitationInput,
+    "ElicitationResult": ElicitationResultInput,
+}
+"""Input model by native ``hook_event_name``."""
 
 
 def parse_input(data: JsonInput) -> AnyInput:
-    """Strictly parse one Claude Code command-hook input payload."""
+    """Strictly parse one Claude Code command-hook input payload.
 
-    return INPUT_ADAPTER.validate_python(parse_json_object(data))
+    Only the model that ``hook_event_name`` names is validated, so a hook run
+    builds one input schema instead of the schema of every event.
+    """
+
+    payload = parse_json_object(data)
+    name = payload.get("hook_event_name")
+    input_type = INPUT_TYPES.get(name) if isinstance(name, str) else None
+    if input_type is None:
+        raise ValueError(f"unknown Claude Code hook event {name!r}")
+    return cast(AnyInput, input_type.model_validate(payload))

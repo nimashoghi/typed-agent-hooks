@@ -16,6 +16,8 @@ class StrictModel(BaseModel):
         strict=True,
         populate_by_name=True,
         frozen=True,
+        # A hook run builds only the schemas that it uses, not all at import.
+        defer_build=True,
     )
 
 
@@ -34,6 +36,8 @@ class InputModel(BaseModel):
         strict=True,
         populate_by_name=True,
         frozen=True,
+        # A hook run builds only the schemas that it uses, not all at import.
+        defer_build=True,
     )
 
 

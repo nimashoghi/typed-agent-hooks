@@ -1,8 +1,6 @@
 """Codex command-hook input schemas: tolerant readers, strict declared fields."""
 
-from typing import Annotated, Literal, TypeAlias
-
-from pydantic import Field, TypeAdapter
+from typing import Literal, TypeAlias, cast
 
 from typed_agent_hooks.core import InputModel, Json, JsonInput, parse_json_object
 
@@ -118,7 +116,7 @@ class StopInput(BaseInput):
     last_assistant_message: str | None
 
 
-AnyInput: TypeAlias = Annotated[
+AnyInput: TypeAlias = (
     SessionStartInput
     | SubagentStartInput
     | PreToolUseInput
@@ -128,26 +126,34 @@ AnyInput: TypeAlias = Annotated[
     | PostCompactInput
     | UserPromptSubmitInput
     | SubagentStopInput
-    | StopInput,
-    Field(discriminator="hook_event_name"),
-]
-
-INPUT_ADAPTER: TypeAdapter[AnyInput] = TypeAdapter(AnyInput)
-EVENT_NAMES: tuple[CodexEventName, ...] = (
-    "SessionStart",
-    "SubagentStart",
-    "PreToolUse",
-    "PermissionRequest",
-    "PostToolUse",
-    "PreCompact",
-    "PostCompact",
-    "UserPromptSubmit",
-    "SubagentStop",
-    "Stop",
+    | StopInput
 )
+
+INPUT_TYPES: dict[str, type[BaseInput]] = {
+    "SessionStart": SessionStartInput,
+    "SubagentStart": SubagentStartInput,
+    "PreToolUse": PreToolUseInput,
+    "PermissionRequest": PermissionRequestInput,
+    "PostToolUse": PostToolUseInput,
+    "PreCompact": PreCompactInput,
+    "PostCompact": PostCompactInput,
+    "UserPromptSubmit": UserPromptSubmitInput,
+    "SubagentStop": SubagentStopInput,
+    "Stop": StopInput,
+}
+"""Input model by native ``hook_event_name``."""
 
 
 def parse_input(data: JsonInput) -> AnyInput:
-    """Strictly parse one Codex command-hook input payload."""
+    """Strictly parse one Codex command-hook input payload.
 
-    return INPUT_ADAPTER.validate_python(parse_json_object(data))
+    Only the model that ``hook_event_name`` names is validated, so a hook run
+    builds one input schema instead of the schema of every event.
+    """
+
+    payload = parse_json_object(data)
+    name = payload.get("hook_event_name")
+    input_type = INPUT_TYPES.get(name) if isinstance(name, str) else None
+    if input_type is None:
+        raise ValueError(f"unknown Codex hook event {name!r}")
+    return cast(AnyInput, input_type.model_validate(payload))

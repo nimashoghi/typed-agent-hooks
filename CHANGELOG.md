@@ -12,6 +12,8 @@ Changed:
 - `app.handlers` maps shared event types, not event names, to handlers.
 - `EventContext.host` (`"codex"` or `"claude"`) replaces `EventContext.provider`.
 - `shared.events.EVENT_TYPES` replaces `EVENT_NAMES` and `EVENT_NAME_BY_TYPE`. `shared.events.AnyEvent` is a plain union.
+- `codex.INPUT_TYPES` and `claude_code.INPUT_TYPES` (input model by native event name) replace `EVENT_NAMES` and `INPUT_ADAPTER` in each host package. `parse_input` validates only the model that `hook_event_name` names, and raises `ValueError` for an unknown name. `AnyInput` is a plain union.
+- All models set `defer_build`, so a hook run builds only the schemas that it uses. A Claude Code hook run is about 20 ms faster.
 
 Added:
 
@@ -23,5 +25,5 @@ Removed:
 - The private `_typed-agent-hooks run --managed-app` protocol and the `HookApp.main(cli)` fallback to a domain CLI.
 - The `HookApp(providers=...)` option.
 - The FastMCP forwarder and bridge (`typed_agent_hooks.fastmcp`), the `fastmcp` extra, the `tah-fastmcp-forward` console script, and `EventContext.response_available`.
-- `typed_agent_hooks.registry`, `core.Provider`, `shared.outputs.to_provider_output`, `shared.events.EVENT_ADAPTER`, the `EVENT_NAME_BY_TYPE` and `INPUT_ADAPTER` exports of the host packages, and the stale `__version__`.
+- `typed_agent_hooks.registry`, `core.Provider`, `shared.outputs.to_provider_output`, `shared.events.EVENT_ADAPTER`, `EVENT_NAME_BY_TYPE` in the host packages, and the stale `__version__`.
 - The `cyclopts` and `pydantic-core` dependencies.
