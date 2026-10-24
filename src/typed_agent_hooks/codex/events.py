@@ -155,5 +155,5 @@ def parse_input(data: JsonInput) -> AnyInput:
     name = payload.get("hook_event_name")
     input_type = INPUT_TYPES.get(name) if isinstance(name, str) else None
     if input_type is None:
-        raise ValueError(f"unknown Codex hook event {name!r}")
+        raise ValueError(f"unsupported Codex hook event {name!r}")
     return cast(AnyInput, input_type.model_validate(payload))

@@ -35,7 +35,7 @@ if __name__ == "__main__":
     app.main()
 ```
 
-Set `exclude-newer` to a date after the release that the file pins, because uv ignores releases that are newer than that date.
+Set `exclude-newer` to a date on or after the upload of the `typed-agent-hooks` release that the file pins. uv ignores every upload after that date, the pinned release included, and the date freezes the other dependencies.
 
 ## Host files
 
@@ -83,6 +83,8 @@ Claude Code, in `.claude/settings.json`:
 - A failure fails open: one line on stderr, nothing on stdout, exit 0. Failures include a payload that does not parse, an event that has no handler, an event that has no shared equivalent, a handler exception or `sys.exit`, and an output that the event cannot carry.
 - A missing or unknown host argument is a programming error: a usage line on stderr and exit 1. Both hosts read exit 1 as a non-blocking error, so a wrong host file does not block a tool call or a prompt.
 
+`main()` fails open only after the file runs. `uv run --script` can fail before that, for example when the uv cache is cold and the package index is not available. uv then exits 2, which both hosts read as a blocking error. Prepare the environment before a session, for example with `uv sync --script FILE`.
+
 `app.handle(host, payload)` does the same work in the current process and raises on each failure. Use it in tests.
 
 ## Check host files without a host
@@ -121,11 +123,12 @@ Every event carries `event.context` with the host, session ID, working directory
 
 ## Host wire schemas
 
-`typed_agent_hooks.codex` and `typed_agent_hooks.claude_code` hold the native schemas of each host. Wire inputs ignore unknown fields, but declared fields stay strictly typed. Outputs are closed and exact.
+`typed_agent_hooks.codex` and `typed_agent_hooks.claude_code` hold the native schemas of each host, for the events in the table above. Wire inputs ignore unknown fields, but declared fields stay strictly typed. Outputs are closed and exact. A Claude Code event with no shared equivalent, such as `Notification`, is not modeled: `parse_input` raises `ValueError`, and `main()` fails open.
 
 ## Development
 
 ```console
+uv run ruff format --check .
 uv run ruff check .
 uv run ty check
 uv run pytest -q

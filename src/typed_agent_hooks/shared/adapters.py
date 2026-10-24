@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from typed_agent_hooks.core import Host, JsonInput
+from typed_agent_hooks.core import Host
 
 from .events import (
     AnyEvent,
@@ -25,10 +25,6 @@ from .events import (
 
 if TYPE_CHECKING:
     from typed_agent_hooks import claude_code, codex
-
-
-class NoSharedMappingError(ValueError):
-    """Raised when a host-only event has no shared semantic mapping."""
 
 
 NATIVE_EVENT_NAMES: dict[Host, dict[type[BaseEvent], str]] = {
@@ -187,8 +183,8 @@ def from_codex(event: codex.events.AnyInput) -> AnyEvent:
     raise AssertionError(f"unmapped Codex event type: {type(event).__name__}")
 
 
-def try_from_claude_code(event: claude_code.events.AnyInput) -> AnyEvent | None:
-    """Return a shared event, or ``None`` for a Claude Code-only event."""
+def from_claude_code(event: claude_code.events.AnyInput) -> AnyEvent:
+    """Map a Claude Code wire event into its shared semantic event."""
 
     from typed_agent_hooks import claude_code
 
@@ -265,31 +261,4 @@ def try_from_claude_code(event: claude_code.events.AnyInput) -> AnyEvent | None:
                 stop_hook_active=event.stop_hook_active,
                 last_assistant_message=event.last_assistant_message,
             )
-    return None
-
-
-def from_claude_code(event: claude_code.events.AnyInput) -> AnyEvent:
-    """Map a Claude Code wire event, failing if no shared mapping exists."""
-
-    mapped = try_from_claude_code(event)
-    if mapped is None:
-        raise NoSharedMappingError(
-            f"Claude Code event {event.hook_event_name} has no shared semantic mapping"
-        )
-    return mapped
-
-
-def parse_codex(data: JsonInput) -> AnyEvent:
-    """Parse Codex input and map it into shared mode."""
-
-    from typed_agent_hooks import codex
-
-    return from_codex(codex.parse_input(data))
-
-
-def parse_claude_code(data: JsonInput) -> AnyEvent:
-    """Parse Claude Code input and require a shared mapping."""
-
-    from typed_agent_hooks import claude_code
-
-    return from_claude_code(claude_code.parse_input(data))
+    raise AssertionError(f"unmapped Claude Code event type: {type(event).__name__}")

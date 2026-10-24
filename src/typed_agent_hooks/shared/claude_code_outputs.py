@@ -33,6 +33,8 @@ def _system_message(event: AnyEvent, message: str) -> claude_code.outputs.Struct
             return claude_code.outputs.PermissionRequestOutput(system_message=message)
         case "ToolCallCompleted":
             return claude_code.outputs.PostToolUseOutput(system_message=message)
+        case "ToolCallFailed":
+            return claude_code.outputs.PostToolUseFailureOutput(system_message=message)
         case "CompactionStarting":
             return claude_code.outputs.PreCompactOutput(system_message=message)
         case "CompactionFinished":

@@ -21,28 +21,26 @@ def _payload(name: str, event_name: str) -> dict[str, object]:
     return next(item for item in _payloads(name) if item["hook_event_name"] == event_name)
 
 
-def test_codex_events_have_total_shared_mappings() -> None:
-    events = [
-        shared.from_codex(codex.parse_input(payload)) for payload in _payloads("codex_inputs.json")
-    ]
+@pytest.mark.parametrize("host", ["codex", "claude"])
+def test_every_modeled_event_maps_back_to_its_native_name(
+    host: Literal["codex", "claude"],
+) -> None:
+    mapped = set()
+    for payload in _payloads(FIXTURE_BY_HOST[host]):
+        name = payload["hook_event_name"]
+        if host == "codex":
+            event = shared.from_codex(codex.parse_input(payload))
+        elif name in claude_code.INPUT_TYPES:
+            event = shared.from_claude_code(claude_code.parse_input(payload))
+        else:
+            continue
+        assert shared.native_event_name(type(event), host) == name
+        mapped.add(type(event))
 
     # ToolCallFailed is Claude Code-only: Codex has no failure primitive and
     # reports failures inside ordinary PostToolUse responses.
-    assert {type(event) for event in events} == set(shared.events.EVENT_TYPES) - {
-        shared.events.ToolCallFailed
-    }
-
-
-@pytest.mark.parametrize("host", ["codex", "claude"])
-def test_native_event_names_match_the_adapters(host: Literal["codex", "claude"]) -> None:
-    for payload in _payloads(FIXTURE_BY_HOST[host]):
-        if host == "codex":
-            event = shared.from_codex(codex.parse_input(payload))
-        else:
-            event = shared.try_from_claude_code(claude_code.parse_input(payload))
-            if event is None:
-                continue
-        assert shared.native_event_name(type(event), host) == payload["hook_event_name"]
+    missing = {shared.events.ToolCallFailed} if host == "codex" else set()
+    assert mapped == set(shared.events.EVENT_TYPES) - missing
 
 
 def test_codex_has_no_native_tool_failure_event() -> None:
@@ -50,14 +48,6 @@ def test_codex_has_no_native_tool_failure_event() -> None:
     assert shared.native_event_name(shared.events.ToolCallFailed, "claude") == (
         "PostToolUseFailure"
     )
-
-
-def test_claude_only_event_is_not_coerced_into_shared_mode() -> None:
-    wire_event = claude_code.parse_input(_payload("claude_code_inputs.json", "Notification"))
-
-    assert shared.try_from_claude_code(wire_event) is None
-    with pytest.raises(shared.NoSharedMappingError, match="no shared semantic mapping"):
-        shared.from_claude_code(wire_event)
 
 
 def test_agent_identity_reaches_shared_context() -> None:
@@ -72,6 +62,19 @@ def test_agent_identity_reaches_shared_context() -> None:
     assert codex_event.context.agent_type == "explore"
     assert claude_event.context.agent_id is None
     assert claude_event.context.agent_type is None
+
+
+def test_claude_tool_failure_carries_a_system_message() -> None:
+    wire_event = claude_code.parse_input(_payload("claude_code_inputs.json", "PostToolUseFailure"))
+    event = shared.from_claude_code(wire_event)
+
+    output = shared.outputs.to_claude_code_output(
+        event, shared.outputs.SystemMessage(message="The tool failed.")
+    )
+
+    assert claude_code.render_output("PostToolUseFailure", output) == (
+        '{"systemMessage":"The tool failed."}'
+    )
 
 
 def test_claude_failure_maps_to_tool_call_failed() -> None:

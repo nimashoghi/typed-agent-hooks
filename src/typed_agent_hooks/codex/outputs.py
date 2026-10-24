@@ -4,7 +4,7 @@ from typing import Literal, TypeAlias
 
 from pydantic import Field, model_validator
 
-from typed_agent_hooks.core import CommonOutput, Json, PlainTextOutput, StrictModel, render_json
+from typed_agent_hooks.core import CommonOutput, Json, StrictModel, render_json
 
 from .events import CodexEventName
 
@@ -202,7 +202,7 @@ StructuredOutput: TypeAlias = (
     | UserPromptSubmitOutput
     | StopOutput
 )
-HookResult: TypeAlias = StructuredOutput | PlainTextOutput | None
+HookResult: TypeAlias = StructuredOutput | None
 
 _OUTPUT_TYPE_BY_EVENT: dict[CodexEventName, type[StructuredOutput]] = {
     "SessionStart": SessionStartOutput,
@@ -223,13 +223,10 @@ def render_output(event_name: CodexEventName, output: HookResult) -> str | None:
 
     if output is None:
         return None
-    if isinstance(output, PlainTextOutput):
-        return output.text
-
     expected = _OUTPUT_TYPE_BY_EVENT[event_name]
     if type(output) is not expected:
         raise TypeError(
             f"{event_name} handler returned {type(output).__name__}; "
-            f"expected {expected.__name__}, PlainTextOutput, or None"
+            f"expected {expected.__name__} or None"
         )
     return render_json(output)

@@ -49,12 +49,6 @@ Json: TypeAlias = JsonValue
 JsonInput: TypeAlias = str | bytes | Mapping[str, object]
 
 
-class PlainTextOutput(StrictModel):
-    """Raw stdout returned by events that accept unstructured text."""
-
-    text: str
-
-
 class CommonOutput(StrictModel):
     """Common structured command-hook output fields."""
 

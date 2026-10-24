@@ -4,15 +4,9 @@ from typing import Literal, TypeAlias
 
 from pydantic import Field, model_validator
 
-from typed_agent_hooks.core import (
-    ClaudeCommonOutput,
-    Json,
-    PlainTextOutput,
-    StrictModel,
-    render_json,
-)
+from typed_agent_hooks.core import ClaudeCommonOutput, Json, StrictModel, render_json
 
-from .events import ClaudeEventName, ElicitationAction, PermissionUpdate
+from .events import ClaudeEventName, PermissionUpdate
 
 
 class _BlockableOutput(ClaudeCommonOutput):
@@ -57,27 +51,6 @@ class SessionStartOutput(ClaudeCommonOutput):
     )
 
 
-class SetupSpecificOutput(StrictModel):
-    hook_event_name: Literal["Setup"] = Field(
-        validation_alias="hookEventName", serialization_alias="hookEventName"
-    )
-    additional_context: str = Field(
-        validation_alias="additionalContext", serialization_alias="additionalContext"
-    )
-
-
-class SetupOutput(ClaudeCommonOutput):
-    hook_specific_output: SetupSpecificOutput | None = Field(
-        default=None,
-        validation_alias="hookSpecificOutput",
-        serialization_alias="hookSpecificOutput",
-    )
-
-
-class InstructionsLoadedOutput(ClaudeCommonOutput):
-    """Structured output for ``InstructionsLoaded``."""
-
-
 class UserPromptSubmitSpecificOutput(StrictModel):
     hook_event_name: Literal["UserPromptSubmit"] = Field(
         validation_alias="hookEventName", serialization_alias="hookEventName"
@@ -97,40 +70,6 @@ class UserPromptSubmitSpecificOutput(StrictModel):
 
 class UserPromptSubmitOutput(_BlockableOutput):
     hook_specific_output: UserPromptSubmitSpecificOutput | None = Field(
-        default=None,
-        validation_alias="hookSpecificOutput",
-        serialization_alias="hookSpecificOutput",
-    )
-
-
-class UserPromptExpansionSpecificOutput(StrictModel):
-    hook_event_name: Literal["UserPromptExpansion"] = Field(
-        validation_alias="hookEventName", serialization_alias="hookEventName"
-    )
-    additional_context: str | None = Field(
-        default=None, validation_alias="additionalContext", serialization_alias="additionalContext"
-    )
-
-
-class UserPromptExpansionOutput(_BlockableOutput):
-    hook_specific_output: UserPromptExpansionSpecificOutput | None = Field(
-        default=None,
-        validation_alias="hookSpecificOutput",
-        serialization_alias="hookSpecificOutput",
-    )
-
-
-class MessageDisplaySpecificOutput(StrictModel):
-    hook_event_name: Literal["MessageDisplay"] = Field(
-        validation_alias="hookEventName", serialization_alias="hookEventName"
-    )
-    display_content: str | None = Field(
-        default=None, validation_alias="displayContent", serialization_alias="displayContent"
-    )
-
-
-class MessageDisplayOutput(ClaudeCommonOutput):
-    hook_specific_output: MessageDisplaySpecificOutput | None = Field(
         default=None,
         validation_alias="hookSpecificOutput",
         serialization_alias="hookSpecificOutput",
@@ -254,42 +193,6 @@ class PostToolUseFailureOutput(ClaudeCommonOutput):
     )
 
 
-class PostToolBatchSpecificOutput(StrictModel):
-    hook_event_name: Literal["PostToolBatch"] = Field(
-        validation_alias="hookEventName", serialization_alias="hookEventName"
-    )
-    additional_context: str | None = Field(
-        default=None, validation_alias="additionalContext", serialization_alias="additionalContext"
-    )
-
-
-class PostToolBatchOutput(_BlockableOutput):
-    hook_specific_output: PostToolBatchSpecificOutput | None = Field(
-        default=None,
-        validation_alias="hookSpecificOutput",
-        serialization_alias="hookSpecificOutput",
-    )
-
-
-class PermissionDeniedSpecificOutput(StrictModel):
-    hook_event_name: Literal["PermissionDenied"] = Field(
-        validation_alias="hookEventName", serialization_alias="hookEventName"
-    )
-    retry: bool
-
-
-class PermissionDeniedOutput(ClaudeCommonOutput):
-    hook_specific_output: PermissionDeniedSpecificOutput | None = Field(
-        default=None,
-        validation_alias="hookSpecificOutput",
-        serialization_alias="hookSpecificOutput",
-    )
-
-
-class NotificationOutput(ClaudeCommonOutput):
-    """Structured output for ``Notification``."""
-
-
 class SubagentStartSpecificOutput(StrictModel):
     hook_event_name: Literal["SubagentStart"] = Field(
         validation_alias="hookEventName", serialization_alias="hookEventName"
@@ -324,14 +227,6 @@ class SubagentStopOutput(_BlockableOutput):
     )
 
 
-class TaskCreatedOutput(ClaudeCommonOutput):
-    """Structured output for ``TaskCreated``."""
-
-
-class TaskCompletedOutput(ClaudeCommonOutput):
-    """Structured output for ``TaskCompleted``."""
-
-
 class StopSpecificOutput(StrictModel):
     hook_event_name: Literal["Stop"] = Field(
         validation_alias="hookEventName", serialization_alias="hookEventName"
@@ -349,58 +244,6 @@ class StopOutput(_BlockableOutput):
     )
 
 
-class StopFailureOutput(ClaudeCommonOutput):
-    """Claude ignores this event's stdout and exit code."""
-
-
-class TeammateIdleOutput(ClaudeCommonOutput):
-    """Structured output for ``TeammateIdle``."""
-
-
-class ConfigChangeOutput(_BlockableOutput):
-    """Structured output for ``ConfigChange``."""
-
-
-class CwdChangedSpecificOutput(StrictModel):
-    hook_event_name: Literal["CwdChanged"] = Field(
-        validation_alias="hookEventName", serialization_alias="hookEventName"
-    )
-    watch_paths: list[str] = Field(validation_alias="watchPaths", serialization_alias="watchPaths")
-
-
-class CwdChangedOutput(ClaudeCommonOutput):
-    hook_specific_output: CwdChangedSpecificOutput | None = Field(
-        default=None,
-        validation_alias="hookSpecificOutput",
-        serialization_alias="hookSpecificOutput",
-    )
-
-
-class FileChangedSpecificOutput(StrictModel):
-    hook_event_name: Literal["FileChanged"] = Field(
-        validation_alias="hookEventName", serialization_alias="hookEventName"
-    )
-    watch_paths: list[str] = Field(validation_alias="watchPaths", serialization_alias="watchPaths")
-
-
-class FileChangedOutput(ClaudeCommonOutput):
-    hook_specific_output: FileChangedSpecificOutput | None = Field(
-        default=None,
-        validation_alias="hookSpecificOutput",
-        serialization_alias="hookSpecificOutput",
-    )
-
-
-class WorktreePathOutput(StrictModel):
-    """Plain path stdout required by a command ``WorktreeCreate`` hook."""
-
-    path: str = Field(min_length=1)
-
-
-class WorktreeRemoveOutput(ClaudeCommonOutput):
-    """Structured output for ``WorktreeRemove``."""
-
-
 class PreCompactOutput(_BlockableOutput):
     """Structured output for ``PreCompact``."""
 
@@ -409,117 +252,33 @@ class PostCompactOutput(ClaudeCommonOutput):
     """Structured output for ``PostCompact``."""
 
 
-class SessionEndOutput(ClaudeCommonOutput):
-    """Structured output for ``SessionEnd``."""
-
-
-class ElicitationSpecificOutput(StrictModel):
-    hook_event_name: Literal["Elicitation"] = Field(
-        validation_alias="hookEventName", serialization_alias="hookEventName"
-    )
-    action: ElicitationAction
-    content: dict[str, Json] | None = None
-
-    @model_validator(mode="after")
-    def _content_requires_accept(self) -> "ElicitationSpecificOutput":
-        if self.action != "accept" and self.content is not None:
-            raise ValueError("content is only meaningful with action='accept'")
-        return self
-
-
-class ElicitationOutput(ClaudeCommonOutput):
-    hook_specific_output: ElicitationSpecificOutput | None = Field(
-        default=None,
-        validation_alias="hookSpecificOutput",
-        serialization_alias="hookSpecificOutput",
-    )
-
-
-class ElicitationResultSpecificOutput(StrictModel):
-    hook_event_name: Literal["ElicitationResult"] = Field(
-        validation_alias="hookEventName", serialization_alias="hookEventName"
-    )
-    action: ElicitationAction
-    content: dict[str, Json] | None = None
-
-    @model_validator(mode="after")
-    def _content_requires_accept(self) -> "ElicitationResultSpecificOutput":
-        if self.action != "accept" and self.content is not None:
-            raise ValueError("content is only meaningful with action='accept'")
-        return self
-
-
-class ElicitationResultOutput(ClaudeCommonOutput):
-    hook_specific_output: ElicitationResultSpecificOutput | None = Field(
-        default=None,
-        validation_alias="hookSpecificOutput",
-        serialization_alias="hookSpecificOutput",
-    )
-
-
 StructuredOutput: TypeAlias = (
     SessionStartOutput
-    | SetupOutput
-    | InstructionsLoadedOutput
     | UserPromptSubmitOutput
-    | UserPromptExpansionOutput
-    | MessageDisplayOutput
     | PreToolUseOutput
     | PermissionRequestOutput
     | PostToolUseOutput
     | PostToolUseFailureOutput
-    | PostToolBatchOutput
-    | PermissionDeniedOutput
-    | NotificationOutput
     | SubagentStartOutput
     | SubagentStopOutput
-    | TaskCreatedOutput
-    | TaskCompletedOutput
     | StopOutput
-    | StopFailureOutput
-    | TeammateIdleOutput
-    | ConfigChangeOutput
-    | CwdChangedOutput
-    | FileChangedOutput
-    | WorktreeRemoveOutput
     | PreCompactOutput
     | PostCompactOutput
-    | SessionEndOutput
-    | ElicitationOutput
-    | ElicitationResultOutput
 )
-HookResult: TypeAlias = StructuredOutput | PlainTextOutput | WorktreePathOutput | None
+HookResult: TypeAlias = StructuredOutput | None
 
-_OUTPUT_TYPE_BY_EVENT: dict[ClaudeEventName, type[StrictModel]] = {
+_OUTPUT_TYPE_BY_EVENT: dict[ClaudeEventName, type[StructuredOutput]] = {
     "SessionStart": SessionStartOutput,
-    "Setup": SetupOutput,
-    "InstructionsLoaded": InstructionsLoadedOutput,
     "UserPromptSubmit": UserPromptSubmitOutput,
-    "UserPromptExpansion": UserPromptExpansionOutput,
-    "MessageDisplay": MessageDisplayOutput,
     "PreToolUse": PreToolUseOutput,
     "PermissionRequest": PermissionRequestOutput,
     "PostToolUse": PostToolUseOutput,
     "PostToolUseFailure": PostToolUseFailureOutput,
-    "PostToolBatch": PostToolBatchOutput,
-    "PermissionDenied": PermissionDeniedOutput,
-    "Notification": NotificationOutput,
     "SubagentStart": SubagentStartOutput,
     "SubagentStop": SubagentStopOutput,
-    "TaskCreated": TaskCreatedOutput,
-    "TaskCompleted": TaskCompletedOutput,
     "Stop": StopOutput,
-    "StopFailure": StopFailureOutput,
-    "TeammateIdle": TeammateIdleOutput,
-    "ConfigChange": ConfigChangeOutput,
-    "CwdChanged": CwdChangedOutput,
-    "FileChanged": FileChangedOutput,
-    "WorktreeRemove": WorktreeRemoveOutput,
     "PreCompact": PreCompactOutput,
     "PostCompact": PostCompactOutput,
-    "SessionEnd": SessionEndOutput,
-    "Elicitation": ElicitationOutput,
-    "ElicitationResult": ElicitationResultOutput,
 }
 
 
@@ -528,19 +287,10 @@ def render_output(event_name: ClaudeEventName, output: HookResult) -> str | None
 
     if output is None:
         return None
-    if event_name == "WorktreeCreate":
-        if not isinstance(output, WorktreePathOutput):
-            raise TypeError("WorktreeCreate handler must return WorktreePathOutput or None")
-        return output.path
-    if isinstance(output, WorktreePathOutput):
-        raise TypeError("WorktreePathOutput is only valid for WorktreeCreate")
-    if isinstance(output, PlainTextOutput):
-        return output.text
-
     expected = _OUTPUT_TYPE_BY_EVENT[event_name]
     if type(output) is not expected:
         raise TypeError(
             f"{event_name} handler returned {type(output).__name__}; "
-            f"expected {expected.__name__}, PlainTextOutput, or None"
+            f"expected {expected.__name__} or None"
         )
     return render_json(output)

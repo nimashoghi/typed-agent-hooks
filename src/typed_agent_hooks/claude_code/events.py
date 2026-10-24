@@ -2,83 +2,29 @@
 
 from typing import Annotated, Literal, TypeAlias, cast
 
-from pydantic import Field, model_validator
+from pydantic import Field
 
 from typed_agent_hooks.core import InputModel, Json, JsonInput, parse_json_object
 
 ClaudeEventName: TypeAlias = Literal[
     "SessionStart",
-    "Setup",
-    "InstructionsLoaded",
     "UserPromptSubmit",
-    "UserPromptExpansion",
-    "MessageDisplay",
     "PreToolUse",
     "PermissionRequest",
     "PostToolUse",
     "PostToolUseFailure",
-    "PostToolBatch",
-    "PermissionDenied",
-    "Notification",
     "SubagentStart",
     "SubagentStop",
-    "TaskCreated",
-    "TaskCompleted",
     "Stop",
-    "StopFailure",
-    "TeammateIdle",
-    "ConfigChange",
-    "CwdChanged",
-    "FileChanged",
-    "WorktreeCreate",
-    "WorktreeRemove",
     "PreCompact",
     "PostCompact",
-    "SessionEnd",
-    "Elicitation",
-    "ElicitationResult",
 ]
 PermissionMode: TypeAlias = Literal[
     "default", "plan", "acceptEdits", "auto", "dontAsk", "bypassPermissions"
 ]
 EffortLevel: TypeAlias = Literal["low", "medium", "high", "xhigh", "max"]
 StartSource: TypeAlias = Literal["startup", "resume", "clear", "compact", "fork"]
-SetupTrigger: TypeAlias = Literal["init", "maintenance"]
 CompactTrigger: TypeAlias = Literal["manual", "auto"]
-MemoryType: TypeAlias = Literal["User", "Project", "Local", "Managed"]
-LoadReason: TypeAlias = Literal[
-    "session_start", "nested_traversal", "path_glob_match", "include", "compact"
-]
-ExpansionType: TypeAlias = Literal["slash_command", "mcp_prompt"]
-NotificationType: TypeAlias = Literal[
-    "permission_prompt",
-    "idle_prompt",
-    "auth_success",
-    "elicitation_dialog",
-    "elicitation_complete",
-    "elicitation_response",
-]
-ConfigSource: TypeAlias = Literal[
-    "user_settings", "project_settings", "local_settings", "policy_settings", "skills"
-]
-FileEvent: TypeAlias = Literal["change", "add", "unlink"]
-SessionEndReason: TypeAlias = Literal[
-    "clear", "resume", "logout", "prompt_input_exit", "bypass_permissions_disabled", "other"
-]
-ElicitationMode: TypeAlias = Literal["form", "url"]
-ElicitationAction: TypeAlias = Literal["accept", "decline", "cancel"]
-StopFailureError: TypeAlias = Literal[
-    "rate_limit",
-    "overloaded",
-    "authentication_failed",
-    "oauth_org_not_allowed",
-    "billing_error",
-    "invalid_request",
-    "model_not_found",
-    "server_error",
-    "max_output_tokens",
-    "unknown",
-]
 
 
 class Effort(InputModel):
@@ -151,13 +97,6 @@ class SessionCron(InputModel):
     prompt: str
 
 
-class ToolCall(InputModel):
-    tool_name: str
-    tool_input: Json
-    tool_use_id: str
-    tool_response: Json
-
-
 class SessionStartInput(BaseInput):
     hook_event_name: Literal["SessionStart"]
     source: StartSource
@@ -165,42 +104,9 @@ class SessionStartInput(BaseInput):
     session_title: str | None = None
 
 
-class SetupInput(BaseInput):
-    hook_event_name: Literal["Setup"]
-    trigger: SetupTrigger
-
-
-class InstructionsLoadedInput(BaseInput):
-    hook_event_name: Literal["InstructionsLoaded"]
-    file_path: str
-    memory_type: MemoryType
-    load_reason: LoadReason
-    globs: list[str] | None = None
-    trigger_file_path: str | None = None
-    parent_file_path: str | None = None
-
-
 class UserPromptSubmitInput(BaseInput):
     hook_event_name: Literal["UserPromptSubmit"]
     prompt: str
-
-
-class UserPromptExpansionInput(BaseInput):
-    hook_event_name: Literal["UserPromptExpansion"]
-    expansion_type: ExpansionType
-    command_name: str
-    command_args: str
-    command_source: str
-    prompt: str
-
-
-class MessageDisplayInput(BaseInput):
-    hook_event_name: Literal["MessageDisplay"]
-    turn_id: str
-    message_id: str
-    index: int = Field(ge=0)
-    final: bool
-    delta: str
 
 
 class PreToolUseInput(BaseInput):
@@ -236,26 +142,6 @@ class PostToolUseFailureInput(BaseInput):
     duration_ms: int | None = Field(default=None, ge=0)
 
 
-class PostToolBatchInput(BaseInput):
-    hook_event_name: Literal["PostToolBatch"]
-    tool_calls: list[ToolCall]
-
-
-class PermissionDeniedInput(BaseInput):
-    hook_event_name: Literal["PermissionDenied"]
-    tool_name: str
-    tool_input: Json
-    tool_use_id: str
-    reason: str
-
-
-class NotificationInput(BaseInput):
-    hook_event_name: Literal["Notification"]
-    message: str
-    title: str | None = None
-    notification_type: NotificationType
-
-
 class SubagentStartInput(BaseInput):
     hook_event_name: Literal["SubagentStart"]
     agent_id: str
@@ -273,71 +159,12 @@ class SubagentStopInput(BaseInput):
     session_crons: list[SessionCron] | None = None
 
 
-class TaskCreatedInput(BaseInput):
-    hook_event_name: Literal["TaskCreated"]
-    task_id: str
-    task_subject: str
-    task_description: str | None = None
-    teammate_name: str | None = None
-    team_name: str | None = None
-
-
-class TaskCompletedInput(BaseInput):
-    hook_event_name: Literal["TaskCompleted"]
-    task_id: str
-    task_subject: str
-    task_description: str | None = None
-    teammate_name: str | None = None
-    team_name: str | None = None
-
-
 class StopInput(BaseInput):
     hook_event_name: Literal["Stop"]
     stop_hook_active: bool
     last_assistant_message: str | None
     background_tasks: list[BackgroundTask] | None = None
     session_crons: list[SessionCron] | None = None
-
-
-class StopFailureInput(BaseInput):
-    hook_event_name: Literal["StopFailure"]
-    error: StopFailureError
-    error_details: str | None = None
-    last_assistant_message: str | None = None
-
-
-class TeammateIdleInput(BaseInput):
-    hook_event_name: Literal["TeammateIdle"]
-    teammate_name: str
-    team_name: str
-
-
-class ConfigChangeInput(BaseInput):
-    hook_event_name: Literal["ConfigChange"]
-    source: ConfigSource
-    file_path: str | None = None
-
-
-class CwdChangedInput(BaseInput):
-    hook_event_name: Literal["CwdChanged"]
-    old_cwd: str
-    new_cwd: str
-
-
-class FileChangedInput(BaseInput):
-    hook_event_name: Literal["FileChanged"]
-    file_path: str
-    event: FileEvent
-
-
-class WorktreeCreateInput(BaseInput):
-    hook_event_name: Literal["WorktreeCreate"]
-    name: str
-
-
-class WorktreeRemoveInput(BaseInput):
-    hook_event_name: Literal["WorktreeRemove"]
-    worktree_path: str
 
 
 class PreCompactInput(BaseInput):
@@ -352,100 +179,32 @@ class PostCompactInput(BaseInput):
     compact_summary: str
 
 
-class SessionEndInput(BaseInput):
-    hook_event_name: Literal["SessionEnd"]
-    reason: SessionEndReason
-
-
-class ElicitationInput(BaseInput):
-    hook_event_name: Literal["Elicitation"]
-    mcp_server_name: str
-    message: str
-    mode: ElicitationMode | None = None
-    url: str | None = None
-    elicitation_id: str | None = None
-    requested_schema: Json | None = None
-
-
-class ElicitationResultInput(BaseInput):
-    hook_event_name: Literal["ElicitationResult"]
-    mcp_server_name: str
-    action: ElicitationAction
-    mode: ElicitationMode | None = None
-    elicitation_id: str | None = None
-    content: Json | None = None
-
-    @model_validator(mode="after")
-    def _content_requires_accept(self) -> "ElicitationResultInput":
-        if self.action != "accept" and self.content is not None:
-            raise ValueError("ElicitationResult content requires action='accept'")
-        return self
-
-
 AnyInput: TypeAlias = (
     SessionStartInput
-    | SetupInput
-    | InstructionsLoadedInput
     | UserPromptSubmitInput
-    | UserPromptExpansionInput
-    | MessageDisplayInput
     | PreToolUseInput
     | PermissionRequestInput
     | PostToolUseInput
     | PostToolUseFailureInput
-    | PostToolBatchInput
-    | PermissionDeniedInput
-    | NotificationInput
     | SubagentStartInput
     | SubagentStopInput
-    | TaskCreatedInput
-    | TaskCompletedInput
     | StopInput
-    | StopFailureInput
-    | TeammateIdleInput
-    | ConfigChangeInput
-    | CwdChangedInput
-    | FileChangedInput
-    | WorktreeCreateInput
-    | WorktreeRemoveInput
     | PreCompactInput
     | PostCompactInput
-    | SessionEndInput
-    | ElicitationInput
-    | ElicitationResultInput
 )
 
 INPUT_TYPES: dict[str, type[BaseInput]] = {
     "SessionStart": SessionStartInput,
-    "Setup": SetupInput,
-    "InstructionsLoaded": InstructionsLoadedInput,
     "UserPromptSubmit": UserPromptSubmitInput,
-    "UserPromptExpansion": UserPromptExpansionInput,
-    "MessageDisplay": MessageDisplayInput,
     "PreToolUse": PreToolUseInput,
     "PermissionRequest": PermissionRequestInput,
     "PostToolUse": PostToolUseInput,
     "PostToolUseFailure": PostToolUseFailureInput,
-    "PostToolBatch": PostToolBatchInput,
-    "PermissionDenied": PermissionDeniedInput,
-    "Notification": NotificationInput,
     "SubagentStart": SubagentStartInput,
     "SubagentStop": SubagentStopInput,
-    "TaskCreated": TaskCreatedInput,
-    "TaskCompleted": TaskCompletedInput,
     "Stop": StopInput,
-    "StopFailure": StopFailureInput,
-    "TeammateIdle": TeammateIdleInput,
-    "ConfigChange": ConfigChangeInput,
-    "CwdChanged": CwdChangedInput,
-    "FileChanged": FileChangedInput,
-    "WorktreeCreate": WorktreeCreateInput,
-    "WorktreeRemove": WorktreeRemoveInput,
     "PreCompact": PreCompactInput,
     "PostCompact": PostCompactInput,
-    "SessionEnd": SessionEndInput,
-    "Elicitation": ElicitationInput,
-    "ElicitationResult": ElicitationResultInput,
 }
 """Input model by native ``hook_event_name``."""
 
@@ -461,5 +220,5 @@ def parse_input(data: JsonInput) -> AnyInput:
     name = payload.get("hook_event_name")
     input_type = INPUT_TYPES.get(name) if isinstance(name, str) else None
     if input_type is None:
-        raise ValueError(f"unknown Claude Code hook event {name!r}")
+        raise ValueError(f"unsupported Claude Code hook event {name!r}")
     return cast(AnyInput, input_type.model_validate(payload))

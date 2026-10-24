@@ -143,7 +143,11 @@ def test_handler_returning_none_writes_nothing(hook: Path, host: str) -> None:
         ("claude", "Stop", "probe: RuntimeError: handler failed on two lines"),
         ("codex", "SubagentStart", "probe: LookupError: no handler for codex SubagentStart"),
         ("claude", "SubagentStart", "probe: LookupError: no handler for claude SubagentStart"),
-        ("claude", "Notification", "probe: NoSharedMappingError: Claude Code event Notification"),
+        (
+            "claude",
+            "Notification",
+            "probe: ValueError: unsupported Claude Code hook event 'Notification'",
+        ),
     ],
 )
 def test_failures_fail_open_with_one_stderr_line(
