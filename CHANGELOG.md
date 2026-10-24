@@ -7,7 +7,7 @@ This release is breaking. The package keeps only the shared typed event layer an
 Changed:
 
 - `HookApp(name=...)` takes only a name. `@app.on(EventType)` takes only the event type.
-- `app.main()` takes the host from its first argument (`codex` or `claude`) and the event from the payload's `hook_event_name`. A failure writes one line on stderr and exits 0. A missing or unknown host argument writes a usage line and exits 1.
+- `app.main()` takes the host from its first argument (`codex` or `claude`) and the event from the payload's `hook_event_name`. A failure, including a handler `sys.exit`, writes one line on stderr and exits 0. What a handler prints goes to stderr. A missing or unknown host argument writes a usage line and exits 1.
 - `app.handle(host, payload)` replaces `handle_json`, `handle_codex_event` and `handle_claude_code_event`.
 - `app.handlers` maps shared event types, not event names, to handlers.
 - `EventContext.host` (`"codex"` or `"claude"`) replaces `EventContext.provider`.

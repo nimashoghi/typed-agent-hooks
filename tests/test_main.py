@@ -39,9 +39,21 @@ def tool_completed(event):
     return shared.outputs.AddContext(text=f"completed {event.tool_input['command']}")
 
 
+@app.on(shared.events.PermissionRequested)
+def permission_requested(event):
+    print("checking the request")
+    return shared.outputs.AllowPermission()
+
+
 @app.on(shared.events.CompactionStarting)
 def compaction_starting(event):
     return None
+
+
+@app.on(shared.events.SubagentStopped)
+def subagent_stopped(event):
+    print("partial context")
+    raise SystemExit(2)
 
 
 @app.on(shared.events.TurnStopped)
@@ -97,6 +109,27 @@ def test_context_output_matches_the_host_wire(
 
 
 @pytest.mark.parametrize("host", ["codex", "claude"])
+def test_handler_print_goes_to_stderr(hook: Path, host: str) -> None:
+    result = _run(hook, host, stdin=json.dumps(_payload(host, "PermissionRequest")))
+
+    assert (result.returncode, result.stderr) == (0, "checking the request\n")
+    assert json.loads(result.stdout) == {
+        "hookSpecificOutput": {
+            "hookEventName": "PermissionRequest",
+            "decision": {"behavior": "allow"},
+        }
+    }
+
+
+@pytest.mark.parametrize("host", ["codex", "claude"])
+def test_handler_exit_fails_open_without_its_print(hook: Path, host: str) -> None:
+    result = _run(hook, host, stdin=json.dumps(_payload(host, "SubagentStop")))
+
+    assert (result.returncode, result.stdout) == (0, "")
+    assert result.stderr == "partial context\nprobe: SystemExit: 2\n"
+
+
+@pytest.mark.parametrize("host", ["codex", "claude"])
 def test_handler_returning_none_writes_nothing(hook: Path, host: str) -> None:
     result = _run(hook, host, stdin=json.dumps(_payload(host, "PreCompact")))
 
@@ -148,7 +181,16 @@ def test_a_check_can_read_the_handled_events_without_a_host(hook: Path) -> None:
         for host in ("codex", "claude")
     }
 
-    names = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PreCompact", "Stop"]
+    names = [
+        "SessionStart",
+        "UserPromptSubmit",
+        "PreToolUse",
+        "PostToolUse",
+        "PermissionRequest",
+        "PreCompact",
+        "SubagentStop",
+        "Stop",
+    ]
     assert handled == {"codex": names, "claude": names}
 
 
