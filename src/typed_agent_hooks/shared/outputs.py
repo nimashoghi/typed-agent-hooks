@@ -1,6 +1,6 @@
 """Portable results that shared-event handlers return."""
 
-from typing import Literal, TypeAlias
+from typing import TypeAlias
 
 from typed_agent_hooks.core import Json, StrictModel
 
@@ -14,14 +14,12 @@ class SharedOutputError(ValueError):
 class SystemMessage(StrictModel):
     """Show a host system message without changing control flow."""
 
-    kind: Literal["system_message"] = "system_message"
     message: str
 
 
 class AddContext(StrictModel):
     """Add semantic context to the current event."""
 
-    kind: Literal["context"] = "context"
     text: str
     system_message: str | None = None
 
@@ -29,7 +27,6 @@ class AddContext(StrictModel):
 class Block(StrictModel):
     """Block a blockable shared event."""
 
-    kind: Literal["block"] = "block"
     reason: str
     context: str | None = None
     system_message: str | None = None
@@ -38,7 +35,6 @@ class Block(StrictModel):
 class AllowTool(StrictModel):
     """Allow a proposed tool call, optionally rewriting its input."""
 
-    kind: Literal["allow_tool"] = "allow_tool"
     reason: str | None = None
     updated_input: Json | None = None
     context: str | None = None
@@ -48,7 +44,6 @@ class AllowTool(StrictModel):
 class DenyTool(StrictModel):
     """Deny a proposed tool call with an explicit reason."""
 
-    kind: Literal["deny_tool"] = "deny_tool"
     reason: str
     context: str | None = None
     system_message: str | None = None
@@ -57,14 +52,12 @@ class DenyTool(StrictModel):
 class AllowPermission(StrictModel):
     """Approve a host permission request without host-only mutations."""
 
-    kind: Literal["allow_permission"] = "allow_permission"
     system_message: str | None = None
 
 
 class DenyPermission(StrictModel):
     """Reject a host permission request with an explicit reason."""
 
-    kind: Literal["deny_permission"] = "deny_permission"
     reason: str
     system_message: str | None = None
 
@@ -72,7 +65,6 @@ class DenyPermission(StrictModel):
 class Stop(StrictModel):
     """Ask the host to stop processing with a reason."""
 
-    kind: Literal["stop"] = "stop"
     reason: str
     system_message: str | None = None
 

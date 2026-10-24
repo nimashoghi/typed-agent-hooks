@@ -14,6 +14,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 FIXTURE_BY_HOST = {"codex": "codex_inputs.json", "claude": "claude_code_inputs.json"}
 
 HOOK = """\
+import ctypes
 import subprocess
 import sys
 
@@ -51,6 +52,7 @@ def tool_failed(event):
 def permission_requested(event):
     print("checking the request")
     subprocess.run([sys.executable, "-c", "print('child output')"], check=True)
+    ctypes.CDLL(None).puts(b"c library output")
     return shared.outputs.AllowPermission()
 
 
@@ -123,7 +125,11 @@ def test_handler_and_child_output_go_to_stderr(hook: Path, host: str) -> None:
     result = _run(hook, host, stdin=json.dumps(_payload(host, "PermissionRequest")))
 
     assert result.returncode == 0
-    assert sorted(result.stderr.splitlines()) == ["checking the request", "child output"]
+    assert sorted(result.stderr.splitlines()) == [
+        "c library output",
+        "checking the request",
+        "child output",
+    ]
     assert json.loads(result.stdout) == {
         "hookSpecificOutput": {
             "hookEventName": "PermissionRequest",
@@ -137,9 +143,11 @@ def test_handler_exit_fails_open_without_its_output(hook: Path, host: str) -> No
     result = _run(hook, host, stdin=json.dumps(_payload(host, "SubagentStop")))
 
     assert (result.returncode, result.stdout) == (0, "")
-    *printed, error = result.stderr.splitlines()
-    assert sorted(printed) == ["child context", "partial context"]
-    assert error == "probe: SystemExit: 2"
+    assert sorted(result.stderr.splitlines()) == [
+        "child context",
+        "partial context",
+        "probe: SystemExit: 2",
+    ]
 
 
 def test_claude_tool_failure_carries_context(hook: Path) -> None:

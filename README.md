@@ -79,7 +79,7 @@ Claude Code, in `.claude/settings.json`:
 
 `app.main()` reads the host from its first argument (`codex` or `claude`) and the payload from stdin. The payload's `hook_event_name` selects the event. `main()` calls the handler of that event and writes the host output to stdout.
 
-- A handler that returns `None` writes nothing. What a handler prints goes to stderr, so stdout holds only the host output.
+- A handler that returns `None` writes nothing. Everything else that the process writes to stdout (a handler's `print`, a child process, a C library) goes to stderr, so stdout holds only the host output.
 - A failure fails open: one line on stderr, nothing on stdout, exit 0. Failures include a payload that does not parse, an event that has no handler, an event that has no shared equivalent, a handler exception or `sys.exit`, and an output that the event cannot carry.
 - A missing or unknown host argument is a programming error: a usage line on stderr and exit 1. Both hosts read exit 1 as a non-blocking error, so a wrong host file does not block a tool call or a prompt.
 

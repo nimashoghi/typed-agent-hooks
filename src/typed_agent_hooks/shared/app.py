@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import contextlib
 import os
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
@@ -81,13 +80,14 @@ class HookApp:
     def main(self) -> None:
         """Run as a hook command: ``HOOK_FILE codex|claude`` with the payload on stdin.
 
-        Writes the host output, if any, to stdout. What a handler or its child
-        processes print goes to stderr. Any failure after the host argument is read (a bad payload,
-        an event with no handler, a handler exception or ``sys.exit``, an
-        output the event cannot carry) fails open: one line on stderr, nothing
-        on stdout, exit 0. A missing or unknown host argument is a programming
-        error: a usage line on stderr and exit 1, which both hosts treat as a
-        non-blocking error.
+        Writes the host output, if any, to stdout. Everything else that the
+        process writes to stdout (a handler's print, a child process, a C
+        library) goes to stderr. Any failure after the host argument is read (a
+        bad payload, an event with no handler, a handler exception or
+        ``sys.exit``, an output the event cannot carry) fails open: one line on
+        stderr, nothing on stdout, exit 0. A missing or unknown host argument
+        is a programming error: a usage line on stderr and exit 1, which both
+        hosts treat as a non-blocking error.
         """
 
         args = sys.argv[1:]
@@ -97,30 +97,17 @@ class HookApp:
             raise SystemExit(1)
         host = cast(Host, args[0])
         try:
-            with _stdout_to_stderr():
-                output = self.handle(host, sys.stdin.buffer.read())
+            # Both hosts read stdout as the hook output. Keep a private copy of
+            # it, and point descriptor 1 at stderr until the process exits.
+            sys.stdout.flush()
+            host_stdout = os.fdopen(os.dup(1), "wb")
+            os.dup2(2, 1)
+            output = self.handle(host, sys.stdin.buffer.read())
             if output is not None:
                 # Both hosts read hook stdout as UTF-8, whatever the locale.
-                sys.stdout.buffer.write(output.encode() + b"\n")
+                host_stdout.write(output.encode() + b"\n")
+                host_stdout.flush()
         # A handler's exit code must not reach the host: exit 2 blocks the action.
         except (Exception, SystemExit) as error:
             detail = " ".join(str(error).split())
             print(f"{self.name}: {type(error).__name__}: {detail}", file=sys.stderr)
-
-
-@contextlib.contextmanager
-def _stdout_to_stderr() -> Iterator[None]:
-    """Send what this process and its children write to stdout to stderr.
-
-    Both hosts read stdout as the hook output, so only that output may reach it.
-    """
-
-    sys.stdout.flush()
-    saved = os.dup(1)
-    os.dup2(2, 1)
-    try:
-        yield
-    finally:
-        sys.stdout.flush()
-        os.dup2(saved, 1)
-        os.close(saved)
