@@ -1,6 +1,6 @@
 """Host-independent semantic events shared by Codex and Claude Code."""
 
-from typing import Literal, TypeAlias
+from typing import Literal, TypeAlias, get_args
 
 from pydantic import Field
 
@@ -157,16 +157,4 @@ AnyEvent: TypeAlias = (
     | TurnStopped
 )
 
-EVENT_TYPES: tuple[type[BaseEvent], ...] = (
-    SessionStarted,
-    PromptSubmitted,
-    ToolCallProposed,
-    PermissionRequested,
-    ToolCallCompleted,
-    ToolCallFailed,
-    CompactionStarting,
-    CompactionFinished,
-    SubagentStarted,
-    SubagentStopped,
-    TurnStopped,
-)
+EVENT_TYPES: tuple[type[BaseEvent], ...] = get_args(AnyEvent)

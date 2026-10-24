@@ -74,8 +74,10 @@ class HookApp:
         """Run as a hook command: ``HOOK_FILE codex|claude`` with the payload on stdin.
 
         Writes the host output, if any, to stdout. Everything else that the
-        process writes to stdout (a handler's print, a child process, a C
-        library) goes to stderr. Any failure after the host argument is read (a
+        process writes to stdout (a print at import or in a handler, a child
+        process, a C library) goes to stderr. Text that was already flushed to
+        stdout before ``main()`` (``python -u`` or an explicit flush) cannot be
+        recalled. Any failure after the host argument is read (a
         bad payload, an event with no handler, a handler exception or
         ``sys.exit``, an output the event cannot carry) fails open: one line on
         stderr, nothing on stdout, exit 0. A missing or unknown host argument
@@ -91,8 +93,9 @@ class HookApp:
         host = cast(Host, args[0])
         try:
             # Both hosts read stdout as the hook output. Keep a private copy of
-            # it, and point descriptor 1 at stderr until the process exits.
-            sys.stdout.flush()
+            # it, and point descriptor 1 at stderr until the process exits. Do
+            # not flush first: text that is still in the stdout buffer, such as
+            # a print at import, then goes to stderr.
             host_stdout = os.fdopen(os.dup(1), "wb")
             os.dup2(2, 1)
             output = self.handle(host, sys.stdin.buffer.read())

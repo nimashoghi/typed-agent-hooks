@@ -14,7 +14,6 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         strict=True,
-        populate_by_name=True,
         frozen=True,
         # A hook run builds only the schemas that it uses, not all at import.
         defer_build=True,
@@ -34,7 +33,6 @@ class InputModel(BaseModel):
     model_config = ConfigDict(
         extra="ignore",
         strict=True,
-        populate_by_name=True,
         frozen=True,
         # A hook run builds only the schemas that it uses, not all at import.
         defer_build=True,
@@ -52,15 +50,9 @@ JsonInput: TypeAlias = str | bytes | Mapping[str, object]
 class CommonOutput(StrictModel):
     """Structured command-hook output fields common to both hosts."""
 
-    continue_: bool | None = Field(
-        default=None, validation_alias="continue", serialization_alias="continue"
-    )
-    stop_reason: str | None = Field(
-        default=None, validation_alias="stopReason", serialization_alias="stopReason"
-    )
-    system_message: str | None = Field(
-        default=None, validation_alias="systemMessage", serialization_alias="systemMessage"
-    )
+    continue_: bool | None = Field(default=None, serialization_alias="continue")
+    stop_reason: str | None = Field(default=None, serialization_alias="stopReason")
+    system_message: str | None = Field(default=None, serialization_alias="systemMessage")
 
 
 def parse_json_object(data: JsonInput) -> dict[str, object]:

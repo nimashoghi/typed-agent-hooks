@@ -7,7 +7,7 @@ This release is breaking. The package keeps only the shared typed event layer an
 Changed:
 
 - `HookApp(name=...)` takes only a name. `@app.on(EventType)` takes only the event type.
-- `app.main()` takes the host from its first argument (`codex` or `claude`) and the event from the payload's `hook_event_name`. A failure, including a handler `sys.exit`, writes one line on stderr and exits 0. Everything else that the process writes to stdout, including child processes, goes to stderr. A missing or unknown host argument writes a usage line and exits 1.
+- `app.main()` takes the host from its first argument (`codex` or `claude`) and the event from the payload's `hook_event_name`. A failure, including a handler `sys.exit`, writes one line on stderr and exits 0. Everything else that the process writes to stdout, including a print at import and child processes, goes to stderr. A missing or unknown host argument writes a usage line and exits 1.
 - `app.handle(host, payload)` replaces `handle_json`, `handle_codex_event` and `handle_claude_code_event`.
 - `app.handlers` maps shared event types, not event names, to handlers.
 - `EventContext.host` (`"codex"` or `"claude"`) replaces `EventContext.provider`.
@@ -36,6 +36,8 @@ Removed:
 - `shared.try_from_claude_code`, `shared.NoSharedMappingError`, `shared.parse_codex` and `shared.parse_claude_code`. `app.handle` replaces the parse helpers.
 - The `shared` exports `adapters`, `from_codex` and `from_claude_code`, and `shared.outputs.to_codex_output` and `to_claude_code_output`. The converters are in the private modules `shared.adapters`, `shared.codex_outputs` and `shared.claude_code_outputs`. `shared.results` is merged into `shared.outputs`.
 - The `kind` field of each shared result.
+- The validation aliases of the output models and `populate_by_name`. Nothing parses host JSON into an output model, so output models take only Python field names. They still write the host names.
+- The output validators that the shared converters cannot trigger: `updatedInput` without an allow decision, and a message on an allowed permission request. The block-reason validators stay.
 - `codex.render_output` and `claude_code.render_output`, with their check of the output type. The shared converters always produce the right type, and `HookApp.handle` renders with `core.render_json`.
 - `typed_agent_hooks.registry`, `core.Provider`, `shared.outputs.to_provider_output`, `shared.events.EVENT_ADAPTER`, `EVENT_NAME_BY_TYPE` in the host packages, and the stale `__version__`.
 - The `cyclopts` and `pydantic-core` dependencies.

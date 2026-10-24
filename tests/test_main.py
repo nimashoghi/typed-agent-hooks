@@ -120,6 +120,21 @@ def test_context_output_matches_the_host_wire(
     assert result.stdout == json.dumps(expected, separators=(",", ":")) + "\n"
 
 
+def test_a_print_at_import_goes_to_stderr(tmp_path: Path) -> None:
+    hook = tmp_path / "loud.py"
+    hook.write_text('print("helper module loaded")\n' + HOOK, encoding="utf-8")
+
+    result = _run(hook, "codex", stdin=json.dumps(_payload("codex", "SessionStart")))
+
+    assert (result.returncode, result.stderr) == (0, "helper module loaded\n")
+    assert json.loads(result.stdout) == {
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": "session startup",
+        }
+    }
+
+
 @pytest.mark.parametrize("host", ["codex", "claude"])
 def test_handler_and_child_output_go_to_stderr(hook: Path, host: str) -> None:
     result = _run(hook, host, stdin=json.dumps(_payload(host, "PermissionRequest")))
