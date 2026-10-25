@@ -2,9 +2,9 @@
 
 from typing import Literal, TypeAlias
 
-from pydantic import Field, model_validator
+from pydantic import Field
 
-from typed_agent_hooks.core import CommonOutput, Json, StrictModel
+from typed_agent_hooks.core import BlockableOutput, CommonOutput, Json, StrictModel
 
 
 class AdditionalContext(StrictModel):
@@ -21,8 +21,7 @@ class SessionStartOutput(CommonOutput):
     )
 
 
-class SubagentStartOutput(StrictModel):
-    system_message: str | None = Field(default=None, serialization_alias="systemMessage")
+class SubagentStartOutput(CommonOutput):
     hook_specific_output: AdditionalContext | None = Field(
         default=None,
         serialization_alias="hookSpecificOutput",
@@ -43,8 +42,7 @@ class PreToolUseDecision(StrictModel):
     additional_context: str | None = Field(default=None, serialization_alias="additionalContext")
 
 
-class PreToolUseOutput(StrictModel):
-    system_message: str | None = Field(default=None, serialization_alias="systemMessage")
+class PreToolUseOutput(CommonOutput):
     hook_specific_output: PreToolUseDecision | None = Field(
         default=None,
         serialization_alias="hookSpecificOutput",
@@ -61,8 +59,7 @@ class PermissionRequestSpecificOutput(StrictModel):
     decision: PermissionDecision
 
 
-class PermissionRequestOutput(StrictModel):
-    system_message: str | None = Field(default=None, serialization_alias="systemMessage")
+class PermissionRequestOutput(CommonOutput):
     hook_specific_output: PermissionRequestSpecificOutput | None = Field(
         default=None,
         serialization_alias="hookSpecificOutput",
@@ -74,8 +71,7 @@ class PostToolUseSpecificOutput(StrictModel):
     additional_context: str | None = Field(default=None, serialization_alias="additionalContext")
 
 
-class PostToolUseOutput(StrictModel):
-    system_message: str | None = Field(default=None, serialization_alias="systemMessage")
+class PostToolUseOutput(CommonOutput):
     hook_specific_output: PostToolUseSpecificOutput | None = Field(
         default=None,
         serialization_alias="hookSpecificOutput",
@@ -87,33 +83,15 @@ class UserPromptSubmitSpecificOutput(StrictModel):
     additional_context: str = Field(serialization_alias="additionalContext")
 
 
-class UserPromptSubmitOutput(CommonOutput):
-    decision: Literal["block"] | None = None
-    reason: str | None = None
+class UserPromptSubmitOutput(BlockableOutput):
     hook_specific_output: UserPromptSubmitSpecificOutput | None = Field(
         default=None,
         serialization_alias="hookSpecificOutput",
     )
 
-    @model_validator(mode="after")
-    def _block_requires_reason(self) -> "UserPromptSubmitOutput":
-        _validate_block(self.decision, self.reason)
-        return self
 
-
-class StopOutput(CommonOutput):
-    decision: Literal["block"] | None = None
-    reason: str | None = None
-
-    @model_validator(mode="after")
-    def _block_requires_reason(self) -> "StopOutput":
-        _validate_block(self.decision, self.reason)
-        return self
-
-
-def _validate_block(decision: str | None, reason: str | None) -> None:
-    if decision == "block" and not reason:
-        raise ValueError("reason is required when decision='block'")
+class StopOutput(BlockableOutput):
+    """Structured output for ``Stop`` and ``SubagentStop``."""
 
 
 StructuredOutput: TypeAlias = (

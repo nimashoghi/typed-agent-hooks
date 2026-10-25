@@ -4,7 +4,7 @@ import json
 from collections.abc import Mapping
 from typing import Literal, TypeAlias, cast
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.types import JsonValue
 
 
@@ -48,11 +48,27 @@ JsonInput: TypeAlias = str | bytes | Mapping[str, object]
 
 
 class CommonOutput(StrictModel):
-    """Structured command-hook output fields common to both hosts."""
+    """The output field of every event that a shared result can answer."""
+
+    system_message: str | None = Field(default=None, serialization_alias="systemMessage")
+
+
+class BlockableOutput(CommonOutput):
+    """Output of an event that a shared ``Block`` or ``Stop`` can answer.
+
+    Both hosts read the same four fields on these events.
+    """
 
     continue_: bool | None = Field(default=None, serialization_alias="continue")
     stop_reason: str | None = Field(default=None, serialization_alias="stopReason")
-    system_message: str | None = Field(default=None, serialization_alias="systemMessage")
+    decision: Literal["block"] | None = None
+    reason: str | None = None
+
+    @model_validator(mode="after")
+    def _block_requires_reason(self) -> "BlockableOutput":
+        if self.decision == "block" and not self.reason:
+            raise ValueError("reason is required when decision='block'")
+        return self
 
 
 def parse_json_object(data: JsonInput) -> dict[str, object]:

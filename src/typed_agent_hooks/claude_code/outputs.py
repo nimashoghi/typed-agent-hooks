@@ -2,20 +2,9 @@
 
 from typing import Literal, TypeAlias
 
-from pydantic import Field, model_validator
+from pydantic import Field
 
-from typed_agent_hooks.core import CommonOutput, Json, StrictModel
-
-
-class _BlockableOutput(CommonOutput):
-    decision: Literal["block"] | None = None
-    reason: str | None = None
-
-    @model_validator(mode="after")
-    def _block_requires_reason(self) -> "_BlockableOutput":
-        if self.decision == "block" and not self.reason:
-            raise ValueError("reason is required when decision='block'")
-        return self
+from typed_agent_hooks.core import BlockableOutput, CommonOutput, Json, StrictModel
 
 
 class SessionStartSpecificOutput(StrictModel):
@@ -35,7 +24,7 @@ class UserPromptSubmitSpecificOutput(StrictModel):
     additional_context: str | None = Field(default=None, serialization_alias="additionalContext")
 
 
-class UserPromptSubmitOutput(_BlockableOutput):
+class UserPromptSubmitOutput(BlockableOutput):
     hook_specific_output: UserPromptSubmitSpecificOutput | None = Field(
         default=None,
         serialization_alias="hookSpecificOutput",
@@ -116,11 +105,11 @@ class SubagentStartOutput(CommonOutput):
     )
 
 
-class SubagentStopOutput(_BlockableOutput):
+class SubagentStopOutput(BlockableOutput):
     """Structured output for ``SubagentStop``."""
 
 
-class StopOutput(_BlockableOutput):
+class StopOutput(BlockableOutput):
     """Structured output for ``Stop``."""
 
 
