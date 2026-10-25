@@ -334,3 +334,49 @@ def test_registration_uses_event_models_not_strings() -> None:
 
     with pytest.raises(ValueError, match="unsupported event model"):
         app.on(cast(Any, codex.events.UserPromptSubmitInput))
+
+
+ALL_EVENTS = {event_type.__name__ for event_type in shared.events.EVENT_TYPES}
+COMPACTION = {"CompactionStarting", "CompactionFinished"}
+# The README results table, row by row.
+VALID_EVENTS: list[tuple[object, set[str]]] = [
+    (
+        shared.outputs.AddContext(text="Context."),
+        {
+            "SessionStarted",
+            "PromptSubmitted",
+            "ToolCallProposed",
+            "ToolCallCompleted",
+            "ToolCallFailed",
+            "SubagentStarted",
+        },
+    ),
+    (shared.outputs.SystemMessage(message="Note."), ALL_EVENTS - COMPACTION),
+    (shared.outputs.Block(reason="No."), {"PromptSubmitted", "SubagentStopped", "TurnStopped"}),
+    (shared.outputs.Stop(reason="Stop."), {"PromptSubmitted", "SubagentStopped", "TurnStopped"}),
+    (shared.outputs.AllowTool(updated_input={"command": "true"}), {"ToolCallProposed"}),
+    (shared.outputs.DenyTool(reason="No."), {"ToolCallProposed"}),
+    (shared.outputs.AllowPermission(), {"PermissionRequested"}),
+    (shared.outputs.DenyPermission(reason="No."), {"PermissionRequested"}),
+]
+
+
+@pytest.mark.parametrize("host", ["codex", "claude"])
+@pytest.mark.parametrize(("result", "valid"), VALID_EVENTS)
+def test_each_result_renders_exactly_on_its_valid_events(
+    host: str, result: object, valid: set[str]
+) -> None:
+    for payload in _payloads(FIXTURE_BY_HOST[host]):
+        if host == "codex":
+            event = from_codex(codex.parse_input(payload))
+            convert = to_codex_output
+        elif payload["hook_event_name"] in claude_code.events.INPUT_TYPES:
+            event = from_claude_code(claude_code.parse_input(payload))
+            convert = to_claude_code_output
+        else:
+            continue
+        if event.event_name in valid:
+            assert render_json(cast(Any, convert(cast(Any, event), cast(Any, result))))
+        else:
+            with pytest.raises(SharedOutputError):
+                convert(cast(Any, event), cast(Any, result))

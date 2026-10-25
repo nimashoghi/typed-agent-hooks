@@ -107,21 +107,38 @@ for event_type in app.handlers:
 
 ## Shared events
 
-| Shared event (`shared.events`) | Codex | Claude Code | `AddContext` |
-| --- | --- | --- | --- |
-| `SessionStarted` | `SessionStart` | `SessionStart` | yes |
-| `PromptSubmitted` | `UserPromptSubmit` | `UserPromptSubmit` | yes |
-| `ToolCallProposed` | `PreToolUse` | `PreToolUse` | yes |
-| `PermissionRequested` | `PermissionRequest` | `PermissionRequest` | no |
-| `ToolCallCompleted` | `PostToolUse` | `PostToolUse` | yes |
-| `ToolCallFailed` | none | `PostToolUseFailure` | yes |
-| `CompactionStarting` | `PreCompact` | `PreCompact` | no |
-| `CompactionFinished` | `PostCompact` | `PostCompact` | no |
-| `SubagentStarted` | `SubagentStart` | `SubagentStart` | yes |
-| `SubagentStopped` | `SubagentStop` | `SubagentStop` | no |
-| `TurnStopped` | `Stop` | `Stop` | no |
+| Shared event (`shared.events`) | Codex | Claude Code |
+| --- | --- | --- |
+| `SessionStarted` | `SessionStart` | `SessionStart` |
+| `PromptSubmitted` | `UserPromptSubmit` | `UserPromptSubmit` |
+| `ToolCallProposed` | `PreToolUse` | `PreToolUse` |
+| `PermissionRequested` | `PermissionRequest` | `PermissionRequest` |
+| `ToolCallCompleted` | `PostToolUse` | `PostToolUse` |
+| `ToolCallFailed` | none | `PostToolUseFailure` |
+| `CompactionStarting` | `PreCompact` | `PreCompact` |
+| `CompactionFinished` | `PostCompact` | `PostCompact` |
+| `SubagentStarted` | `SubagentStart` | `SubagentStart` |
+| `SubagentStopped` | `SubagentStop` | `SubagentStop` |
+| `TurnStopped` | `Stop` | `Stop` |
 
-Every event carries `event.context` with the host, session ID, working directory and other session data. A handler returns one of the results in `shared.outputs`: `AddContext`, `SystemMessage`, `Block`, `AllowTool`, `DenyTool`, `AllowPermission`, `DenyPermission`, `Stop`, or `None`. A result that the hosts would carry differently raises `SharedOutputError` in both hosts, with two stated exceptions for `AllowTool` below. The package does not guess a translation. The compaction events accept no result: Claude Code ignores `systemMessage` and `continue` on them, and a block means different things in the two hosts. `Block` is valid only on `PromptSubmitted`, `SubagentStopped` and `TurnStopped`: on `PostToolUse`, Claude Code keeps the tool output next to the reason, while Codex replaces the output with the reason. `AllowTool` differs by host: Claude Code skips its permission prompt (and applies `updated_input` when it is set), while Codex only applies `updated_input` and its normal approval still runs. Codex rejects an allow without `updated_input`, so that result raises for Codex. `Stop` is valid only on `PromptSubmitted`, `SubagentStopped` and `TurnStopped`: Claude Code has no decision control on `SessionStart`, and Codex turns a stop on `PostToolUse` into model feedback and continues the turn.
+Every event carries `event.context` with the host, session ID, working directory and other session data.
+
+## Results
+
+A handler returns one result from `shared.outputs`, or `None`. Each result is valid only on the events in this table. On any other event it raises `SharedOutputError` in both hosts, and `main()` fails open. The package does not guess a translation.
+
+| Result | Valid events | Notes |
+| --- | --- | --- |
+| `None` | every event | Writes nothing. |
+| `AddContext` | `SessionStarted`, `PromptSubmitted`, `ToolCallProposed`, `ToolCallCompleted`, `ToolCallFailed`, `SubagentStarted` | `ToolCallFailed` is Claude Code only. |
+| `SystemMessage` | every event except `CompactionStarting` and `CompactionFinished` | Claude Code ignores `systemMessage` on compaction events. |
+| `Block` | `PromptSubmitted`, `SubagentStopped`, `TurnStopped` | `context` is valid only on `PromptSubmitted`. Not on `ToolCallCompleted`: Claude Code keeps the tool output next to the reason, and Codex replaces it. |
+| `Stop` | `PromptSubmitted`, `SubagentStopped`, `TurnStopped` | Not on `SessionStarted` (Claude Code has no decision control there) or `ToolCallCompleted` (Codex turns it into model feedback and continues). |
+| `AllowTool` | `ToolCallProposed` | The one stated host difference. Claude Code skips its permission prompt and applies `updated_input` when it is set. Codex only applies `updated_input`, and its normal approval still runs. Codex rejects an allow without `updated_input`, so that result raises for Codex. |
+| `DenyTool` | `ToolCallProposed` | |
+| `AllowPermission`, `DenyPermission` | `PermissionRequested` | |
+
+The compaction events accept no result except `None`. For context after compaction, return `AddContext` from `SessionStarted` with `source == "compact"`.
 
 ## Host wire schemas
 
