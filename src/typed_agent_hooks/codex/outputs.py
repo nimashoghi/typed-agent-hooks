@@ -68,7 +68,7 @@ class PermissionRequestOutput(CommonOutput):
 
 class PostToolUseSpecificOutput(StrictModel):
     hook_event_name: Literal["PostToolUse"] = Field(serialization_alias="hookEventName")
-    additional_context: str | None = Field(default=None, serialization_alias="additionalContext")
+    additional_context: str = Field(serialization_alias="additionalContext")
 
 
 class PostToolUseOutput(CommonOutput):

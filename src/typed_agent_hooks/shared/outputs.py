@@ -25,10 +25,13 @@ class AddContext(StrictModel):
 
 
 class Block(StrictModel):
-    """Block a blockable shared event."""
+    """Block a blockable shared event.
+
+    It carries no context: Codex keeps a blocked prompt's context for the next
+    turn, Claude Code drops it, and Codex cannot carry it on a stop block.
+    """
 
     reason: str
-    context: str | None = None
     system_message: str | None = None
 
 

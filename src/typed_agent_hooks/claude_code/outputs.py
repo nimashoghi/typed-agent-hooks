@@ -9,7 +9,7 @@ from typed_agent_hooks.core import BlockableOutput, CommonOutput, Json, StrictMo
 
 class SessionStartSpecificOutput(StrictModel):
     hook_event_name: Literal["SessionStart"] = Field(serialization_alias="hookEventName")
-    additional_context: str | None = Field(default=None, serialization_alias="additionalContext")
+    additional_context: str = Field(serialization_alias="additionalContext")
 
 
 class SessionStartOutput(CommonOutput):
@@ -21,7 +21,7 @@ class SessionStartOutput(CommonOutput):
 
 class UserPromptSubmitSpecificOutput(StrictModel):
     hook_event_name: Literal["UserPromptSubmit"] = Field(serialization_alias="hookEventName")
-    additional_context: str | None = Field(default=None, serialization_alias="additionalContext")
+    additional_context: str = Field(serialization_alias="additionalContext")
 
 
 class UserPromptSubmitOutput(BlockableOutput):
@@ -71,7 +71,7 @@ class PermissionRequestOutput(CommonOutput):
 
 class PostToolUseSpecificOutput(StrictModel):
     hook_event_name: Literal["PostToolUse"] = Field(serialization_alias="hookEventName")
-    additional_context: str | None = Field(default=None, serialization_alias="additionalContext")
+    additional_context: str = Field(serialization_alias="additionalContext")
 
 
 class PostToolUseOutput(CommonOutput):

@@ -91,22 +91,12 @@ def _block(event: AnyEvent, output: Block) -> codex.outputs.StructuredOutput:
     require_event(event, BLOCK_EVENTS, output)
     match event.event_name:
         case "PromptSubmitted":
-            prompt_specific = (
-                codex.outputs.UserPromptSubmitSpecificOutput(
-                    hook_event_name="UserPromptSubmit", additional_context=output.context
-                )
-                if output.context is not None
-                else None
-            )
             return codex.outputs.UserPromptSubmitOutput(
                 system_message=output.system_message,
                 decision="block",
                 reason=output.reason,
-                hook_specific_output=prompt_specific,
             )
         case "SubagentStopped" | "TurnStopped":
-            if output.context is not None:
-                raise SharedOutputError(f"{event.event_name} block cannot include context")
             return codex.outputs.StopOutput(
                 system_message=output.system_message,
                 decision="block",

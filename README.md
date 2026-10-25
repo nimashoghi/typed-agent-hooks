@@ -132,7 +132,7 @@ A handler returns one result from `shared.outputs`, or `None`. Each result is va
 | `None` | every event | Writes nothing. |
 | `AddContext` | `SessionStarted`, `PromptSubmitted`, `ToolCallProposed`, `ToolCallCompleted`, `ToolCallFailed`, `SubagentStarted` | `ToolCallFailed` is Claude Code only. |
 | `SystemMessage` | every event except `CompactionStarting` and `CompactionFinished` | Claude Code ignores `systemMessage` on compaction events. |
-| `Block` | `PromptSubmitted`, `SubagentStopped`, `TurnStopped` | `context` is valid only on `PromptSubmitted`. Not on `ToolCallCompleted`: Claude Code keeps the tool output next to the reason, and Codex replaces it. |
+| `Block` | `PromptSubmitted`, `SubagentStopped`, `TurnStopped` | It carries no context: on a blocked prompt, Codex keeps the context for the next turn and Claude Code drops it. Not on `ToolCallCompleted`: Claude Code keeps the tool output next to the reason, and Codex replaces it. |
 | `Stop` | `PromptSubmitted`, `SubagentStopped`, `TurnStopped` | Not on `SessionStarted` (Claude Code has no decision control there) or `ToolCallCompleted` (Codex turns it into model feedback and continues). |
 | `AllowTool` | `ToolCallProposed` | The one stated host difference. Claude Code skips its permission prompt and applies `updated_input` when it is set. Codex only applies `updated_input`, and its normal approval still runs. Codex rejects an allow without `updated_input`, so that result raises for Codex. |
 | `DenyTool` | `ToolCallProposed` | |
