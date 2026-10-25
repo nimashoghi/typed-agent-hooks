@@ -35,7 +35,7 @@ if __name__ == "__main__":
     app.main()
 ```
 
-uv uses only uploads from before the `exclude-newer` date, for every package. Set the date on or after the upload date of the pinned `typed-agent-hooks` release, or uv cannot find that release. The date also freezes the other dependencies. The date in the example comes from before the 0.3.0 upload; replace it when you pin a release.
+uv uses only uploads from before the `exclude-newer` date, for every package. Set it to a time after the upload of the pinned `typed-agent-hooks` release, or uv cannot find that release. The date also freezes the other dependencies. The date in the example comes from before the 0.3.0 upload; replace it when you pin a release.
 
 ## Host files
 
@@ -133,8 +133,8 @@ A handler returns one result from `shared.outputs`, or `None`. Each result is va
 | `AddContext` | `SessionStarted`, `PromptSubmitted`, `ToolCallProposed`, `ToolCallCompleted`, `ToolCallFailed`, `SubagentStarted` | `ToolCallFailed` is Claude Code only. |
 | `SystemMessage` | every event except `CompactionStarting` and `CompactionFinished` | Claude Code ignores `systemMessage` on compaction events. |
 | `Block` | `PromptSubmitted`, `SubagentStopped`, `TurnStopped` | It carries no context: on a blocked prompt, Codex keeps the context for the next turn and Claude Code drops it. Not on `ToolCallCompleted`: Claude Code keeps the tool output next to the reason, and Codex replaces it. |
-| `Stop` | `PromptSubmitted`, `SubagentStopped`, `TurnStopped` | Not on `SessionStarted` (Claude Code has no decision control there) or `ToolCallCompleted` (Codex turns it into model feedback and continues). |
-| `AllowTool` | `ToolCallProposed` | The one stated host difference. Claude Code skips its permission prompt and applies `updated_input` when it is set. Codex only applies `updated_input`, and its normal approval still runs. Codex rejects an allow without `updated_input`, so that result raises for Codex. |
+| `Stop` | `PromptSubmitted`, `SubagentStopped`, `TurnStopped` | A stated host difference: Claude Code keeps `stopReason` in the conversation, so the model sees it if the conversation continues, while Codex does not give it to the model. Not on `SessionStarted` (Claude Code has no decision control there) or `ToolCallCompleted` (Codex turns it into model feedback and continues). |
+| `AllowTool` | `ToolCallProposed` | A stated host difference. Claude Code skips its permission prompt and applies `updated_input` when it is set. Codex only applies `updated_input`, and its normal approval still runs. Codex rejects an allow without `updated_input`, so that result raises for Codex. |
 | `DenyTool` | `ToolCallProposed` | |
 | `AllowPermission`, `DenyPermission` | `PermissionRequested` | |
 

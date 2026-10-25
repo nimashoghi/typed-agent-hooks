@@ -7,7 +7,9 @@ from .outputs import (
     BLOCK_EVENTS,
     CONTEXT_EVENTS,
     MESSAGE_EVENTS,
+    PERMISSION_EVENTS,
     STOP_EVENTS,
+    TOOL_DECISION_EVENTS,
     AddContext,
     AllowPermission,
     AllowTool,
@@ -106,8 +108,7 @@ def _block(event: AnyEvent, output: Block) -> codex.outputs.StructuredOutput:
 
 
 def _tool_decision(event: AnyEvent, output: AllowTool | DenyTool) -> codex.outputs.PreToolUseOutput:
-    if event.event_name != "ToolCallProposed":
-        raise SharedOutputError(f"{type(output).__name__} is only valid for ToolCallProposed")
+    require_event(event, TOOL_DECISION_EVENTS, output)
     if isinstance(output, AllowTool):
         # Codex rejects permissionDecision allow without updatedInput
         # (codex-rs/hooks/src/engine/output_parser.rs, rust-v0.164.0).
@@ -135,8 +136,7 @@ def _tool_decision(event: AnyEvent, output: AllowTool | DenyTool) -> codex.outpu
 def _permission_decision(
     event: AnyEvent, output: AllowPermission | DenyPermission
 ) -> codex.outputs.PermissionRequestOutput:
-    if event.event_name != "PermissionRequested":
-        raise SharedOutputError(f"{type(output).__name__} is only valid for PermissionRequested")
+    require_event(event, PERMISSION_EVENTS, output)
     if isinstance(output, AllowPermission):
         decision = codex.outputs.PermissionDecision(behavior="allow")
     else:

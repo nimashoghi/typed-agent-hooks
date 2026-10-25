@@ -25,6 +25,7 @@ Fixed:
 - `AllowTool` without `updated_input` raises `SharedOutputError` in Codex. Before, Codex rejected the output and dropped its context. With `updated_input`, Claude Code skips its permission prompt and Codex still runs its normal approval; the docstring and README say so.
 - `Block` on `ToolCallCompleted` raises in both hosts. Claude Code kept the tool output next to the reason, while Codex replaced the output with the reason.
 - `Stop` on `SessionStarted` or `ToolCallCompleted` raises in both hosts. Claude Code has no decision control on `SessionStart`, and Codex turned a stop on `PostToolUse` into model feedback and continued the turn.
+- The README states that `Stop` differs by host: Claude Code keeps `stopReason` in the conversation, and Codex does not give it to the model.
 - `Block` has no `context` field. Before, a stop block with context rendered for Claude Code and raised for Codex, and a blocked prompt's context reached the next turn in Codex but not in Claude Code.
 - A Claude Code `PreCompact` payload with `custom_instructions: null` (automatic compaction, or `/compact` with no text) parses. It failed validation before, so the hook did not run.
 - `SystemMessage` on a Claude Code `ToolCallFailed` event renders a `PostToolUseFailure` output. It raised `AssertionError` before.

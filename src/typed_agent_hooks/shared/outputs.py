@@ -127,6 +127,10 @@ STOP_EVENTS: frozenset[SharedEventName] = frozenset(
 )
 
 
+TOOL_DECISION_EVENTS: frozenset[SharedEventName] = frozenset({"ToolCallProposed"})
+PERMISSION_EVENTS: frozenset[SharedEventName] = frozenset({"PermissionRequested"})
+
+
 def require_event(event: AnyEvent, allowed: frozenset[SharedEventName], output: object) -> None:
     """Require that an output intent is portable for a shared event."""
 

@@ -7,7 +7,9 @@ from .outputs import (
     BLOCK_EVENTS,
     CONTEXT_EVENTS,
     MESSAGE_EVENTS,
+    PERMISSION_EVENTS,
     STOP_EVENTS,
+    TOOL_DECISION_EVENTS,
     AddContext,
     AllowPermission,
     AllowTool,
@@ -15,7 +17,6 @@ from .outputs import (
     DenyPermission,
     DenyTool,
     Result,
-    SharedOutputError,
     Stop,
     SystemMessage,
     require_event,
@@ -125,8 +126,7 @@ def _block(event: AnyEvent, output: Block) -> claude_code.outputs.StructuredOutp
 def _tool_decision(
     event: AnyEvent, output: AllowTool | DenyTool
 ) -> claude_code.outputs.PreToolUseOutput:
-    if event.event_name != "ToolCallProposed":
-        raise SharedOutputError(f"{type(output).__name__} is only valid for ToolCallProposed")
+    require_event(event, TOOL_DECISION_EVENTS, output)
     if isinstance(output, AllowTool):
         specific = claude_code.outputs.PreToolUseSpecificOutput(
             hook_event_name="PreToolUse",
@@ -150,8 +150,7 @@ def _tool_decision(
 def _permission_decision(
     event: AnyEvent, output: AllowPermission | DenyPermission
 ) -> claude_code.outputs.PermissionRequestOutput:
-    if event.event_name != "PermissionRequested":
-        raise SharedOutputError(f"{type(output).__name__} is only valid for PermissionRequested")
+    require_event(event, PERMISSION_EVENTS, output)
     if isinstance(output, AllowPermission):
         decision = claude_code.outputs.PermissionRequestDecision(behavior="allow")
     else:
