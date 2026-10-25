@@ -33,7 +33,13 @@ class Block(StrictModel):
 
 
 class AllowTool(StrictModel):
-    """Allow a proposed tool call, optionally rewriting its input."""
+    """Allow a proposed tool call, optionally rewriting its input.
+
+    The hosts differ. Claude Code skips its permission prompt and uses
+    ``updated_input`` when it is set. Codex only applies ``updated_input``,
+    and its normal approval still runs; Codex rejects an allow without
+    ``updated_input``, so that result raises ``SharedOutputError`` for Codex.
+    """
 
     reason: str | None = None
     updated_input: Json | None = None

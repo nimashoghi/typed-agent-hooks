@@ -116,28 +116,12 @@ class SubagentStartOutput(CommonOutput):
     )
 
 
-class SubagentStopSpecificOutput(StrictModel):
-    hook_event_name: Literal["SubagentStop"] = Field(serialization_alias="hookEventName")
-    additional_context: str = Field(serialization_alias="additionalContext")
-
-
 class SubagentStopOutput(_BlockableOutput):
-    hook_specific_output: SubagentStopSpecificOutput | None = Field(
-        default=None,
-        serialization_alias="hookSpecificOutput",
-    )
-
-
-class StopSpecificOutput(StrictModel):
-    hook_event_name: Literal["Stop"] = Field(serialization_alias="hookEventName")
-    additional_context: str = Field(serialization_alias="additionalContext")
+    """Structured output for ``SubagentStop``."""
 
 
 class StopOutput(_BlockableOutput):
-    hook_specific_output: StopSpecificOutput | None = Field(
-        default=None,
-        serialization_alias="hookSpecificOutput",
-    )
+    """Structured output for ``Stop``."""
 
 
 StructuredOutput: TypeAlias = (

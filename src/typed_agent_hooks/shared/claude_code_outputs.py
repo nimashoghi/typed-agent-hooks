@@ -130,33 +130,19 @@ def _block(event: AnyEvent, output: Block) -> claude_code.outputs.StructuredOutp
                 reason=output.reason,
                 hook_specific_output=completed_specific,
             )
-        case "SubagentStopped":
-            subagent_specific = (
-                claude_code.outputs.SubagentStopSpecificOutput(
-                    hook_event_name="SubagentStop", additional_context=output.context
-                )
-                if output.context is not None
-                else None
+        case "SubagentStopped" | "TurnStopped":
+            # Codex cannot carry context on these blocks, so neither host does.
+            if output.context is not None:
+                raise SharedOutputError(f"{event.event_name} block cannot include context")
+            stop_type = (
+                claude_code.outputs.SubagentStopOutput
+                if event.event_name == "SubagentStopped"
+                else claude_code.outputs.StopOutput
             )
-            return claude_code.outputs.SubagentStopOutput(
+            return stop_type(
                 system_message=output.system_message,
                 decision="block",
                 reason=output.reason,
-                hook_specific_output=subagent_specific,
-            )
-        case "TurnStopped":
-            stop_specific = (
-                claude_code.outputs.StopSpecificOutput(
-                    hook_event_name="Stop", additional_context=output.context
-                )
-                if output.context is not None
-                else None
-            )
-            return claude_code.outputs.StopOutput(
-                system_message=output.system_message,
-                decision="block",
-                reason=output.reason,
-                hook_specific_output=stop_specific,
             )
     raise AssertionError(f"unhandled block event {event.event_name}")
 

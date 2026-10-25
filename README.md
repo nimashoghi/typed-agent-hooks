@@ -14,7 +14,7 @@ Each hook is one executable PEP 723 file:
 # requires-python = ">=3.13"
 # dependencies = ["typed-agent-hooks==0.3.0"]
 # [tool.uv]
-# exclude-newer = "2026-11-01T00:00:00Z"
+# exclude-newer = "2026-10-25T00:00:00Z"
 # ///
 """Suggest the notebook when a Bash command runs inline Python."""
 
@@ -121,7 +121,7 @@ for event_type in app.handlers:
 | `SubagentStopped` | `SubagentStop` | `SubagentStop` | no |
 | `TurnStopped` | `Stop` | `Stop` | no |
 
-Every event carries `event.context` with the host, session ID, working directory and other session data. A handler returns one of the results in `shared.outputs`: `AddContext`, `SystemMessage`, `Block`, `AllowTool`, `DenyTool`, `AllowPermission`, `DenyPermission`, `Stop`, or `None`. A result that an event cannot carry in both hosts raises `SharedOutputError`. The package does not guess a translation. The compaction events accept no result: Claude Code ignores `systemMessage` and `continue` on them, and a block means different things in the two hosts. Codex accepts `AllowTool` only with `updated_input`.
+Every event carries `event.context` with the host, session ID, working directory and other session data. A handler returns one of the results in `shared.outputs`: `AddContext`, `SystemMessage`, `Block`, `AllowTool`, `DenyTool`, `AllowPermission`, `DenyPermission`, `Stop`, or `None`. A result that an event cannot carry in both hosts raises `SharedOutputError`. The package does not guess a translation. The compaction events accept no result: Claude Code ignores `systemMessage` and `continue` on them, and a block means different things in the two hosts. `AllowTool` differs by host: Claude Code skips its permission prompt (and applies `updated_input` when it is set), while Codex only applies `updated_input` and its normal approval still runs. Codex rejects an allow without `updated_input`, so that result raises for Codex.
 
 ## Host wire schemas
 

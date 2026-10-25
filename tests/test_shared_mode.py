@@ -169,6 +169,20 @@ def test_compaction_events_accept_no_result(event_name: str, result: object) -> 
         to_claude_code_output(claude_event, cast(Any, result))
 
 
+@pytest.mark.parametrize("event_name", ["Stop", "SubagentStop"])
+def test_stop_block_with_context_raises_in_both_hosts(event_name: str) -> None:
+    codex_event = from_codex(codex.parse_input(_payload("codex_inputs.json", event_name)))
+    claude_event = from_claude_code(
+        claude_code.parse_input(_payload("claude_code_inputs.json", event_name))
+    )
+    block = shared.outputs.Block(reason="Keep going.", context="One more step.")
+
+    with pytest.raises(SharedOutputError, match="block cannot include context"):
+        to_codex_output(codex_event, block)
+    with pytest.raises(SharedOutputError, match="block cannot include context"):
+        to_claude_code_output(claude_event, block)
+
+
 def test_allow_tool_without_updated_input_is_claude_code_only() -> None:
     codex_event = from_codex(codex.parse_input(_payload("codex_inputs.json", "PreToolUse")))
     claude_event = from_claude_code(

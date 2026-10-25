@@ -120,7 +120,7 @@ def _block(event: AnyEvent, output: Block) -> codex.outputs.StructuredOutput:
             )
         case "SubagentStopped" | "TurnStopped":
             if output.context is not None:
-                raise SharedOutputError(f"Codex {event.event_name} block cannot include context")
+                raise SharedOutputError(f"{event.event_name} block cannot include context")
             return codex.outputs.StopOutput(
                 system_message=output.system_message,
                 decision="block",
