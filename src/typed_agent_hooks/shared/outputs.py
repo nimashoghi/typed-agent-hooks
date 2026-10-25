@@ -112,13 +112,10 @@ CONTEXT_EVENTS: frozenset[SharedEventName] = frozenset(
         "SubagentStarted",
     }
 )
+# Not ToolCallCompleted: Claude Code keeps the tool output next to the
+# reason, while Codex replaces the output with the reason.
 BLOCK_EVENTS: frozenset[SharedEventName] = frozenset(
-    {
-        "PromptSubmitted",
-        "ToolCallCompleted",
-        "SubagentStopped",
-        "TurnStopped",
-    }
+    {"PromptSubmitted", "SubagentStopped", "TurnStopped"}
 )
 # Not SessionStarted (Claude Code has no decision control there) and not
 # ToolCallCompleted (Codex turns the stop into model feedback and continues).

@@ -90,9 +90,10 @@ class ToolCallFailed(BaseEvent):
     """A tool call that ended in failure rather than a result.
 
     Claude Code only: it routes a failing call to `PostToolUseFailure` instead
-    of `PostToolUse`, so a completed call implies success there. Codex has no
-    failure primitive and reports failures inside ordinary `ToolCallCompleted`
-    responses, so it never emits this event.
+    of `PostToolUse`. Codex never emits this event. It sends a shell command
+    that exits non-zero as an ordinary `ToolCallCompleted` (the exit code is in
+    the output), and it sends no hook for some other failures, such as an MCP
+    tool error.
     """
 
     event_name: Literal["ToolCallFailed"] = "ToolCallFailed"

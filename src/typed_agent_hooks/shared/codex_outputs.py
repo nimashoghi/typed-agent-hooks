@@ -104,20 +104,6 @@ def _block(event: AnyEvent, output: Block) -> codex.outputs.StructuredOutput:
                 reason=output.reason,
                 hook_specific_output=prompt_specific,
             )
-        case "ToolCallCompleted":
-            completed_specific = (
-                codex.outputs.PostToolUseSpecificOutput(
-                    hook_event_name="PostToolUse", additional_context=output.context
-                )
-                if output.context is not None
-                else None
-            )
-            return codex.outputs.PostToolUseOutput(
-                system_message=output.system_message,
-                decision="block",
-                reason=output.reason,
-                hook_specific_output=completed_specific,
-            )
         case "SubagentStopped" | "TurnStopped":
             if output.context is not None:
                 raise SharedOutputError(f"{event.event_name} block cannot include context")

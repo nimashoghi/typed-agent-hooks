@@ -76,17 +76,10 @@ class PostToolUseSpecificOutput(StrictModel):
 
 class PostToolUseOutput(StrictModel):
     system_message: str | None = Field(default=None, serialization_alias="systemMessage")
-    decision: Literal["block"] | None = None
-    reason: str | None = None
     hook_specific_output: PostToolUseSpecificOutput | None = Field(
         default=None,
         serialization_alias="hookSpecificOutput",
     )
-
-    @model_validator(mode="after")
-    def _block_requires_reason(self) -> "PostToolUseOutput":
-        _validate_block(self.decision, self.reason)
-        return self
 
 
 class UserPromptSubmitSpecificOutput(StrictModel):

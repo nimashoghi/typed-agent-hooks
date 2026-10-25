@@ -169,18 +169,24 @@ def test_compaction_events_accept_no_result(event_name: str, result: object) -> 
         to_claude_code_output(claude_event, cast(Any, result))
 
 
-@pytest.mark.parametrize("event_name", ["SessionStart", "PostToolUse"])
-def test_stop_is_refused_where_the_hosts_differ(event_name: str) -> None:
+@pytest.mark.parametrize(
+    ("event_name", "result"),
+    [
+        ("SessionStart", shared.outputs.Stop(reason="Stop here.")),
+        ("PostToolUse", shared.outputs.Stop(reason="Stop here.")),
+        ("PostToolUse", shared.outputs.Block(reason="Bad output.")),
+    ],
+)
+def test_results_are_refused_where_the_hosts_differ(event_name: str, result: object) -> None:
     codex_event = from_codex(codex.parse_input(_payload("codex_inputs.json", event_name)))
     claude_event = from_claude_code(
         claude_code.parse_input(_payload("claude_code_inputs.json", event_name))
     )
-    stop = shared.outputs.Stop(reason="Stop here.")
 
     with pytest.raises(SharedOutputError, match="not portable"):
-        to_codex_output(codex_event, stop)
+        to_codex_output(codex_event, cast(Any, result))
     with pytest.raises(SharedOutputError, match="not portable"):
-        to_claude_code_output(claude_event, stop)
+        to_claude_code_output(claude_event, cast(Any, result))
 
 
 @pytest.mark.parametrize("event_name", ["Stop", "SubagentStop"])

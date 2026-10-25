@@ -35,7 +35,7 @@ if __name__ == "__main__":
     app.main()
 ```
 
-uv uses only uploads from before the `exclude-newer` date, for every package. Set the date on or after the upload date of the pinned `typed-agent-hooks` release, or uv cannot find that release. The date also freezes the other dependencies.
+uv uses only uploads from before the `exclude-newer` date, for every package. Set the date on or after the upload date of the pinned `typed-agent-hooks` release, or uv cannot find that release. The date also freezes the other dependencies. The date in the example comes from before the 0.3.0 upload; replace it when you pin a release.
 
 ## Host files
 
@@ -103,7 +103,7 @@ for event_type in app.handlers:
     print(shared.native_event_name(event_type, "codex"), shared.native_event_name(event_type, "claude"))
 ```
 
-`app.handlers` maps each shared event type to its handler. `shared.native_event_name(event_type, host)` returns the native event name, or `None` when the host has no such event. Codex has no `ToolCallFailed` event: Claude Code sends a failed tool call as `PostToolUseFailure`, and Codex sends it as `PostToolUse`. A hook that must see every finished tool call in both hosts handles `ToolCallCompleted` and `ToolCallFailed`.
+`app.handlers` maps each shared event type to its handler. `shared.native_event_name(event_type, host)` returns the native event name, or `None` when the host has no such event. Codex has no `ToolCallFailed` event. Claude Code sends a failed tool call as `PostToolUseFailure`. Codex sends a shell command that exits non-zero as `PostToolUse`, and sends no hook for some other failures, such as an MCP tool error. A hook that must see failed shell commands in both hosts handles `ToolCallCompleted` and `ToolCallFailed`.
 
 ## Shared events
 
@@ -121,7 +121,7 @@ for event_type in app.handlers:
 | `SubagentStopped` | `SubagentStop` | `SubagentStop` | no |
 | `TurnStopped` | `Stop` | `Stop` | no |
 
-Every event carries `event.context` with the host, session ID, working directory and other session data. A handler returns one of the results in `shared.outputs`: `AddContext`, `SystemMessage`, `Block`, `AllowTool`, `DenyTool`, `AllowPermission`, `DenyPermission`, `Stop`, or `None`. A result that an event cannot carry in both hosts raises `SharedOutputError`. The package does not guess a translation. The compaction events accept no result: Claude Code ignores `systemMessage` and `continue` on them, and a block means different things in the two hosts. `AllowTool` differs by host: Claude Code skips its permission prompt (and applies `updated_input` when it is set), while Codex only applies `updated_input` and its normal approval still runs. Codex rejects an allow without `updated_input`, so that result raises for Codex. `Stop` is valid only on `PromptSubmitted`, `SubagentStopped` and `TurnStopped`: Claude Code has no decision control on `SessionStart`, and Codex turns a stop on `PostToolUse` into model feedback and continues the turn.
+Every event carries `event.context` with the host, session ID, working directory and other session data. A handler returns one of the results in `shared.outputs`: `AddContext`, `SystemMessage`, `Block`, `AllowTool`, `DenyTool`, `AllowPermission`, `DenyPermission`, `Stop`, or `None`. A result that the hosts would carry differently raises `SharedOutputError` in both hosts, with two stated exceptions for `AllowTool` below. The package does not guess a translation. The compaction events accept no result: Claude Code ignores `systemMessage` and `continue` on them, and a block means different things in the two hosts. `Block` is valid only on `PromptSubmitted`, `SubagentStopped` and `TurnStopped`: on `PostToolUse`, Claude Code keeps the tool output next to the reason, while Codex replaces the output with the reason. `AllowTool` differs by host: Claude Code skips its permission prompt (and applies `updated_input` when it is set), while Codex only applies `updated_input` and its normal approval still runs. Codex rejects an allow without `updated_input`, so that result raises for Codex. `Stop` is valid only on `PromptSubmitted`, `SubagentStopped` and `TurnStopped`: Claude Code has no decision control on `SessionStart`, and Codex turns a stop on `PostToolUse` into model feedback and continues the turn.
 
 ## Host wire schemas
 

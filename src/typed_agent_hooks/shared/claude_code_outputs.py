@@ -116,20 +116,6 @@ def _block(event: AnyEvent, output: Block) -> claude_code.outputs.StructuredOutp
                 reason=output.reason,
                 hook_specific_output=prompt_specific,
             )
-        case "ToolCallCompleted":
-            completed_specific = (
-                claude_code.outputs.PostToolUseSpecificOutput(
-                    hook_event_name="PostToolUse", additional_context=output.context
-                )
-                if output.context is not None
-                else None
-            )
-            return claude_code.outputs.PostToolUseOutput(
-                system_message=output.system_message,
-                decision="block",
-                reason=output.reason,
-                hook_specific_output=completed_specific,
-            )
         case "SubagentStopped" | "TurnStopped":
             # Codex cannot carry context on these blocks, so neither host does.
             if output.context is not None:

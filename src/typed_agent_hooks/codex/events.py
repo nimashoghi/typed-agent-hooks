@@ -19,6 +19,8 @@ class BaseInput(InputModel):
     cwd: str
     hook_event_name: str
     model: str
+    # Absent on PreCompact and PostCompact.
+    permission_mode: PermissionMode | None = None
     # Present on events fired from a subagent's context (observed live on
     # PreToolUse/PostToolUse in collaboration mode); absent on the main thread.
     agent_id: str | None = None
@@ -27,13 +29,11 @@ class BaseInput(InputModel):
 
 class SessionStartInput(BaseInput):
     hook_event_name: Literal["SessionStart"]
-    permission_mode: PermissionMode
     source: StartSource
 
 
 class SubagentStartInput(BaseInput):
     hook_event_name: Literal["SubagentStart"]
-    permission_mode: PermissionMode
     turn_id: str
     agent_id: str
     agent_type: str
@@ -41,7 +41,6 @@ class SubagentStartInput(BaseInput):
 
 class PreToolUseInput(BaseInput):
     hook_event_name: Literal["PreToolUse"]
-    permission_mode: PermissionMode
     turn_id: str
     tool_name: str
     tool_use_id: str
@@ -50,7 +49,6 @@ class PreToolUseInput(BaseInput):
 
 class PermissionRequestInput(BaseInput):
     hook_event_name: Literal["PermissionRequest"]
-    permission_mode: PermissionMode
     turn_id: str
     tool_name: str
     tool_input: Json
@@ -58,7 +56,6 @@ class PermissionRequestInput(BaseInput):
 
 class PostToolUseInput(BaseInput):
     hook_event_name: Literal["PostToolUse"]
-    permission_mode: PermissionMode
     turn_id: str
     tool_name: str
     tool_use_id: str
@@ -80,14 +77,12 @@ class PostCompactInput(BaseInput):
 
 class UserPromptSubmitInput(BaseInput):
     hook_event_name: Literal["UserPromptSubmit"]
-    permission_mode: PermissionMode
     turn_id: str
     prompt: str
 
 
 class SubagentStopInput(BaseInput):
     hook_event_name: Literal["SubagentStop"]
-    permission_mode: PermissionMode
     turn_id: str
     agent_id: str
     agent_type: str
@@ -98,7 +93,6 @@ class SubagentStopInput(BaseInput):
 
 class StopInput(BaseInput):
     hook_event_name: Literal["Stop"]
-    permission_mode: PermissionMode
     turn_id: str
     stop_hook_active: bool
     last_assistant_message: str | None

@@ -60,22 +60,6 @@ def native_event_name(event_type: type[BaseEvent], host: Host) -> str | None:
 
 
 def _codex_context(event: codex.events.AnyInput) -> EventContext:
-    if isinstance(
-        event,
-        (
-            codex.events.SessionStartInput,
-            codex.events.SubagentStartInput,
-            codex.events.PreToolUseInput,
-            codex.events.PermissionRequestInput,
-            codex.events.PostToolUseInput,
-            codex.events.UserPromptSubmitInput,
-            codex.events.SubagentStopInput,
-            codex.events.StopInput,
-        ),
-    ):
-        permission_mode = event.permission_mode
-    else:
-        permission_mode = None
     return EventContext(
         host="codex",
         source_event=event.hook_event_name,
@@ -83,7 +67,7 @@ def _codex_context(event: codex.events.AnyInput) -> EventContext:
         transcript_path=event.transcript_path,
         cwd=event.cwd,
         model=event.model,
-        permission_mode=permission_mode,
+        permission_mode=event.permission_mode,
         agent_id=event.agent_id,
         agent_type=event.agent_type,
     )

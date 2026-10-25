@@ -85,7 +85,7 @@ class PostToolUseSpecificOutput(StrictModel):
     additional_context: str | None = Field(default=None, serialization_alias="additionalContext")
 
 
-class PostToolUseOutput(_BlockableOutput):
+class PostToolUseOutput(CommonOutput):
     hook_specific_output: PostToolUseSpecificOutput | None = Field(
         default=None,
         serialization_alias="hookSpecificOutput",
