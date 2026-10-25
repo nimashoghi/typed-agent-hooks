@@ -76,8 +76,6 @@ class PostToolUseSpecificOutput(StrictModel):
 
 class PostToolUseOutput(StrictModel):
     system_message: str | None = Field(default=None, serialization_alias="systemMessage")
-    continue_: bool | None = Field(default=None, serialization_alias="continue")
-    stop_reason: str | None = Field(default=None, serialization_alias="stopReason")
     decision: Literal["block"] | None = None
     reason: str | None = None
     hook_specific_output: PostToolUseSpecificOutput | None = Field(

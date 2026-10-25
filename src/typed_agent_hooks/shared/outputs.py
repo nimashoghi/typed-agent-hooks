@@ -120,14 +120,10 @@ BLOCK_EVENTS: frozenset[SharedEventName] = frozenset(
         "TurnStopped",
     }
 )
+# Not SessionStarted (Claude Code has no decision control there) and not
+# ToolCallCompleted (Codex turns the stop into model feedback and continues).
 STOP_EVENTS: frozenset[SharedEventName] = frozenset(
-    {
-        "SessionStarted",
-        "PromptSubmitted",
-        "ToolCallCompleted",
-        "SubagentStopped",
-        "TurnStopped",
-    }
+    {"PromptSubmitted", "SubagentStopped", "TurnStopped"}
 )
 
 

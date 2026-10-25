@@ -178,20 +178,8 @@ def _permission_decision(
 def _stop(event: AnyEvent, output: Stop) -> codex.outputs.StructuredOutput:
     require_event(event, STOP_EVENTS, output)
     match event.event_name:
-        case "SessionStarted":
-            return codex.outputs.SessionStartOutput(
-                system_message=output.system_message,
-                continue_=False,
-                stop_reason=output.reason,
-            )
         case "PromptSubmitted":
             return codex.outputs.UserPromptSubmitOutput(
-                system_message=output.system_message,
-                continue_=False,
-                stop_reason=output.reason,
-            )
-        case "ToolCallCompleted":
-            return codex.outputs.PostToolUseOutput(
                 system_message=output.system_message,
                 continue_=False,
                 stop_reason=output.reason,
