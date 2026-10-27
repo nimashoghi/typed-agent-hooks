@@ -3,10 +3,13 @@
 from typed_agent_hooks import codex
 
 from .events import AnyEvent
-from .results import (
+from .outputs import (
     BLOCK_EVENTS,
     CONTEXT_EVENTS,
+    MESSAGE_EVENTS,
+    PERMISSION_EVENTS,
     STOP_EVENTS,
+    TOOL_DECISION_EVENTS,
     AddContext,
     AllowPermission,
     AllowTool,
@@ -33,8 +36,6 @@ def _system_message(event: AnyEvent, message: str) -> codex.outputs.StructuredOu
             return codex.outputs.PermissionRequestOutput(system_message=message)
         case "ToolCallCompleted":
             return codex.outputs.PostToolUseOutput(system_message=message)
-        case "CompactionStarting" | "CompactionFinished":
-            return codex.outputs.LifecycleOutput(system_message=message)
         case "SubagentStarted":
             return codex.outputs.SubagentStartOutput(system_message=message)
         case "SubagentStopped" | "TurnStopped":
@@ -92,44 +93,12 @@ def _block(event: AnyEvent, output: Block) -> codex.outputs.StructuredOutput:
     require_event(event, BLOCK_EVENTS, output)
     match event.event_name:
         case "PromptSubmitted":
-            prompt_specific = (
-                codex.outputs.UserPromptSubmitSpecificOutput(
-                    hook_event_name="UserPromptSubmit", additional_context=output.context
-                )
-                if output.context is not None
-                else None
-            )
             return codex.outputs.UserPromptSubmitOutput(
                 system_message=output.system_message,
                 decision="block",
                 reason=output.reason,
-                hook_specific_output=prompt_specific,
-            )
-        case "ToolCallCompleted":
-            completed_specific = (
-                codex.outputs.PostToolUseSpecificOutput(
-                    hook_event_name="PostToolUse", additional_context=output.context
-                )
-                if output.context is not None
-                else None
-            )
-            return codex.outputs.PostToolUseOutput(
-                system_message=output.system_message,
-                decision="block",
-                reason=output.reason,
-                hook_specific_output=completed_specific,
-            )
-        case "CompactionStarting":
-            if output.context is not None:
-                raise SharedOutputError("CompactionStarting block cannot include context")
-            return codex.outputs.LifecycleOutput(
-                system_message=output.system_message,
-                continue_=False,
-                stop_reason=output.reason,
             )
         case "SubagentStopped" | "TurnStopped":
-            if output.context is not None:
-                raise SharedOutputError(f"Codex {event.event_name} block cannot include context")
             return codex.outputs.StopOutput(
                 system_message=output.system_message,
                 decision="block",
@@ -139,9 +108,12 @@ def _block(event: AnyEvent, output: Block) -> codex.outputs.StructuredOutput:
 
 
 def _tool_decision(event: AnyEvent, output: AllowTool | DenyTool) -> codex.outputs.PreToolUseOutput:
-    if event.event_name != "ToolCallProposed":
-        raise SharedOutputError(f"{type(output).__name__} is only valid for ToolCallProposed")
+    require_event(event, TOOL_DECISION_EVENTS, output)
     if isinstance(output, AllowTool):
+        # Codex rejects permissionDecision allow without updatedInput
+        # (codex-rs/hooks/src/engine/output_parser.rs, rust-v0.164.0).
+        if output.updated_input is None:
+            raise SharedOutputError("Codex accepts AllowTool only with updated_input")
         specific = codex.outputs.PreToolUseDecision(
             hook_event_name="PreToolUse",
             permission_decision="allow",
@@ -164,8 +136,7 @@ def _tool_decision(event: AnyEvent, output: AllowTool | DenyTool) -> codex.outpu
 def _permission_decision(
     event: AnyEvent, output: AllowPermission | DenyPermission
 ) -> codex.outputs.PermissionRequestOutput:
-    if event.event_name != "PermissionRequested":
-        raise SharedOutputError(f"{type(output).__name__} is only valid for PermissionRequested")
+    require_event(event, PERMISSION_EVENTS, output)
     if isinstance(output, AllowPermission):
         decision = codex.outputs.PermissionDecision(behavior="allow")
     else:
@@ -183,26 +154,8 @@ def _permission_decision(
 def _stop(event: AnyEvent, output: Stop) -> codex.outputs.StructuredOutput:
     require_event(event, STOP_EVENTS, output)
     match event.event_name:
-        case "SessionStarted":
-            return codex.outputs.SessionStartOutput(
-                system_message=output.system_message,
-                continue_=False,
-                stop_reason=output.reason,
-            )
         case "PromptSubmitted":
             return codex.outputs.UserPromptSubmitOutput(
-                system_message=output.system_message,
-                continue_=False,
-                stop_reason=output.reason,
-            )
-        case "ToolCallCompleted":
-            return codex.outputs.PostToolUseOutput(
-                system_message=output.system_message,
-                continue_=False,
-                stop_reason=output.reason,
-            )
-        case "CompactionStarting" | "CompactionFinished":
-            return codex.outputs.LifecycleOutput(
                 system_message=output.system_message,
                 continue_=False,
                 stop_reason=output.reason,
@@ -223,6 +176,7 @@ def to_codex_output(event: AnyEvent, output: Result) -> codex.outputs.HookResult
         case None:
             return None
         case SystemMessage(message=message):
+            require_event(event, MESSAGE_EVENTS, output)
             return _system_message(event, message)
         case AddContext():
             return _context(event, output)

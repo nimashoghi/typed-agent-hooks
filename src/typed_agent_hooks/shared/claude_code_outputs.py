@@ -3,10 +3,13 @@
 from typed_agent_hooks import claude_code
 
 from .events import AnyEvent
-from .results import (
+from .outputs import (
     BLOCK_EVENTS,
     CONTEXT_EVENTS,
+    MESSAGE_EVENTS,
+    PERMISSION_EVENTS,
     STOP_EVENTS,
+    TOOL_DECISION_EVENTS,
     AddContext,
     AllowPermission,
     AllowTool,
@@ -14,7 +17,6 @@ from .results import (
     DenyPermission,
     DenyTool,
     Result,
-    SharedOutputError,
     Stop,
     SystemMessage,
     require_event,
@@ -33,10 +35,8 @@ def _system_message(event: AnyEvent, message: str) -> claude_code.outputs.Struct
             return claude_code.outputs.PermissionRequestOutput(system_message=message)
         case "ToolCallCompleted":
             return claude_code.outputs.PostToolUseOutput(system_message=message)
-        case "CompactionStarting":
-            return claude_code.outputs.PreCompactOutput(system_message=message)
-        case "CompactionFinished":
-            return claude_code.outputs.PostCompactOutput(system_message=message)
+        case "ToolCallFailed":
+            return claude_code.outputs.PostToolUseFailureOutput(system_message=message)
         case "SubagentStarted":
             return claude_code.outputs.SubagentStartOutput(system_message=message)
         case "SubagentStopped":
@@ -81,6 +81,14 @@ def _context(event: AnyEvent, output: AddContext) -> claude_code.outputs.Structu
                 system_message=output.system_message,
                 hook_specific_output=completed_specific,
             )
+        case "ToolCallFailed":
+            failed_specific = claude_code.outputs.PostToolUseFailureSpecificOutput(
+                hook_event_name="PostToolUseFailure", additional_context=output.text
+            )
+            return claude_code.outputs.PostToolUseFailureOutput(
+                system_message=output.system_message,
+                hook_specific_output=failed_specific,
+            )
         case "SubagentStarted":
             subagent_specific = claude_code.outputs.SubagentStartSpecificOutput(
                 hook_event_name="SubagentStart", additional_context=output.text
@@ -96,68 +104,21 @@ def _block(event: AnyEvent, output: Block) -> claude_code.outputs.StructuredOutp
     require_event(event, BLOCK_EVENTS, output)
     match event.event_name:
         case "PromptSubmitted":
-            prompt_specific = (
-                claude_code.outputs.UserPromptSubmitSpecificOutput(
-                    hook_event_name="UserPromptSubmit", additional_context=output.context
-                )
-                if output.context is not None
-                else None
-            )
             return claude_code.outputs.UserPromptSubmitOutput(
                 system_message=output.system_message,
                 decision="block",
                 reason=output.reason,
-                hook_specific_output=prompt_specific,
             )
-        case "ToolCallCompleted":
-            completed_specific = (
-                claude_code.outputs.PostToolUseSpecificOutput(
-                    hook_event_name="PostToolUse", additional_context=output.context
-                )
-                if output.context is not None
-                else None
+        case "SubagentStopped" | "TurnStopped":
+            stop_type = (
+                claude_code.outputs.SubagentStopOutput
+                if event.event_name == "SubagentStopped"
+                else claude_code.outputs.StopOutput
             )
-            return claude_code.outputs.PostToolUseOutput(
+            return stop_type(
                 system_message=output.system_message,
                 decision="block",
                 reason=output.reason,
-                hook_specific_output=completed_specific,
-            )
-        case "CompactionStarting":
-            if output.context is not None:
-                raise SharedOutputError("CompactionStarting block cannot include context")
-            return claude_code.outputs.PreCompactOutput(
-                system_message=output.system_message,
-                decision="block",
-                reason=output.reason,
-            )
-        case "SubagentStopped":
-            subagent_specific = (
-                claude_code.outputs.SubagentStopSpecificOutput(
-                    hook_event_name="SubagentStop", additional_context=output.context
-                )
-                if output.context is not None
-                else None
-            )
-            return claude_code.outputs.SubagentStopOutput(
-                system_message=output.system_message,
-                decision="block",
-                reason=output.reason,
-                hook_specific_output=subagent_specific,
-            )
-        case "TurnStopped":
-            stop_specific = (
-                claude_code.outputs.StopSpecificOutput(
-                    hook_event_name="Stop", additional_context=output.context
-                )
-                if output.context is not None
-                else None
-            )
-            return claude_code.outputs.StopOutput(
-                system_message=output.system_message,
-                decision="block",
-                reason=output.reason,
-                hook_specific_output=stop_specific,
             )
     raise AssertionError(f"unhandled block event {event.event_name}")
 
@@ -165,8 +126,7 @@ def _block(event: AnyEvent, output: Block) -> claude_code.outputs.StructuredOutp
 def _tool_decision(
     event: AnyEvent, output: AllowTool | DenyTool
 ) -> claude_code.outputs.PreToolUseOutput:
-    if event.event_name != "ToolCallProposed":
-        raise SharedOutputError(f"{type(output).__name__} is only valid for ToolCallProposed")
+    require_event(event, TOOL_DECISION_EVENTS, output)
     if isinstance(output, AllowTool):
         specific = claude_code.outputs.PreToolUseSpecificOutput(
             hook_event_name="PreToolUse",
@@ -190,8 +150,7 @@ def _tool_decision(
 def _permission_decision(
     event: AnyEvent, output: AllowPermission | DenyPermission
 ) -> claude_code.outputs.PermissionRequestOutput:
-    if event.event_name != "PermissionRequested":
-        raise SharedOutputError(f"{type(output).__name__} is only valid for PermissionRequested")
+    require_event(event, PERMISSION_EVENTS, output)
     if isinstance(output, AllowPermission):
         decision = claude_code.outputs.PermissionRequestDecision(behavior="allow")
     else:
@@ -211,32 +170,8 @@ def _permission_decision(
 def _stop(event: AnyEvent, output: Stop) -> claude_code.outputs.StructuredOutput:
     require_event(event, STOP_EVENTS, output)
     match event.event_name:
-        case "SessionStarted":
-            return claude_code.outputs.SessionStartOutput(
-                system_message=output.system_message,
-                continue_=False,
-                stop_reason=output.reason,
-            )
         case "PromptSubmitted":
             return claude_code.outputs.UserPromptSubmitOutput(
-                system_message=output.system_message,
-                continue_=False,
-                stop_reason=output.reason,
-            )
-        case "ToolCallCompleted":
-            return claude_code.outputs.PostToolUseOutput(
-                system_message=output.system_message,
-                continue_=False,
-                stop_reason=output.reason,
-            )
-        case "CompactionStarting":
-            return claude_code.outputs.PreCompactOutput(
-                system_message=output.system_message,
-                continue_=False,
-                stop_reason=output.reason,
-            )
-        case "CompactionFinished":
-            return claude_code.outputs.PostCompactOutput(
                 system_message=output.system_message,
                 continue_=False,
                 stop_reason=output.reason,
@@ -263,6 +198,7 @@ def to_claude_code_output(event: AnyEvent, output: Result) -> claude_code.output
         case None:
             return None
         case SystemMessage(message=message):
+            require_event(event, MESSAGE_EVENTS, output)
             return _system_message(event, message)
         case AddContext():
             return _context(event, output)

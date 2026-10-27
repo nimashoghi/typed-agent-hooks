@@ -2,10 +2,9 @@
 
 import json
 from collections.abc import Mapping
-from enum import Enum
-from typing import TypeAlias, cast
+from typing import Literal, TypeAlias, cast
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.types import JsonValue
 
 
@@ -15,15 +14,16 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         strict=True,
-        populate_by_name=True,
         frozen=True,
+        # A hook run builds only the schemas that it uses, not all at import.
+        defer_build=True,
     )
 
 
 class InputModel(BaseModel):
     """Tolerant-reader wire input: strict declared fields, unknown keys ignored.
 
-    Providers add payload fields at will, and an unknown key must never turn
+    Hosts add payload fields at will, and an unknown key must never turn
     into a dropped event: Claude Code's `prompt_id` addition silently killed
     every tool event while schemas forbade extras. Declared fields stay
     strictly typed, so drift on a known field still fails loudly. Outputs
@@ -33,51 +33,42 @@ class InputModel(BaseModel):
     model_config = ConfigDict(
         extra="ignore",
         strict=True,
-        populate_by_name=True,
         frozen=True,
+        # A hook run builds only the schemas that it uses, not all at import.
+        defer_build=True,
     )
 
 
-class Provider(str, Enum):
-    """Supported hook providers."""
-
-    CODEX = "codex"
-    CLAUDE_CODE = "claude_code"
-
+Host: TypeAlias = Literal["codex", "claude"]
+"""A hook host, named as the first argument of a hook command."""
+HOSTS: tuple[Host, ...] = ("codex", "claude")
 
 Json: TypeAlias = JsonValue
 JsonInput: TypeAlias = str | bytes | Mapping[str, object]
 
 
-class PlainTextOutput(StrictModel):
-    """Raw stdout returned by events that accept unstructured text."""
-
-    text: str
-
-
 class CommonOutput(StrictModel):
-    """Common structured command-hook output fields."""
+    """The output field of every event that a shared result can answer."""
 
-    continue_: bool | None = Field(
-        default=None, validation_alias="continue", serialization_alias="continue"
-    )
-    stop_reason: str | None = Field(
-        default=None, validation_alias="stopReason", serialization_alias="stopReason"
-    )
-    system_message: str | None = Field(
-        default=None, validation_alias="systemMessage", serialization_alias="systemMessage"
-    )
-    suppress_output: bool | None = Field(
-        default=None, validation_alias="suppressOutput", serialization_alias="suppressOutput"
-    )
+    system_message: str | None = Field(default=None, serialization_alias="systemMessage")
 
 
-class ClaudeCommonOutput(CommonOutput):
-    """Common Claude Code output fields."""
+class BlockableOutput(CommonOutput):
+    """Output of an event that a shared ``Block`` or ``Stop`` can answer.
 
-    terminal_sequence: str | None = Field(
-        default=None, validation_alias="terminalSequence", serialization_alias="terminalSequence"
-    )
+    Both hosts read the same four fields on these events.
+    """
+
+    continue_: bool | None = Field(default=None, serialization_alias="continue")
+    stop_reason: str | None = Field(default=None, serialization_alias="stopReason")
+    decision: Literal["block"] | None = None
+    reason: str | None = None
+
+    @model_validator(mode="after")
+    def _block_requires_reason(self) -> "BlockableOutput":
+        if self.decision == "block" and not self.reason:
+            raise ValueError("reason is required when decision='block'")
+        return self
 
 
 def parse_json_object(data: JsonInput) -> dict[str, object]:
@@ -101,7 +92,7 @@ def parse_json_object(data: JsonInput) -> dict[str, object]:
 
 
 def render_json(model: BaseModel) -> str:
-    """Render a Pydantic model as compact provider wire JSON."""
+    """Render a Pydantic model as compact host wire JSON."""
 
     return json.dumps(
         model.model_dump(by_alias=True, exclude_none=True),

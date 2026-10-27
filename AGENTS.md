@@ -4,10 +4,11 @@ This repository is a standalone uv-managed Python package.
 
 Use `uv run ...` for repository commands. The standard checks are:
 
+- `uv run ruff format --check .`
 - `uv run ruff check .`
 - `uv run ty check`
 - `uv run pytest -q`
 
-Keep Codex and Claude Code wire schemas explicit and separate. Wire inputs are tolerant readers: unknown provider fields are ignored, declared fields stay strictly typed. Outputs stay closed and exact. Shared behavior stays conservative: unsupported provider behavior fails loudly instead of being silently normalized.
+Keep Codex and Claude Code wire schemas explicit and separate. Model only the host events that have a shared equivalent. Wire inputs are tolerant readers: they declare only the fields that the shared events read, ignore the rest, and keep declared fields strictly typed. Outputs hold only the fields that the shared results write, and stay closed and exact. Shared behavior stays conservative: unsupported host behavior fails loudly instead of being silently normalized.
 
-Hook applications are code-first executable PEP 723 files. Configuration lives on `HookApp` and its decorators. Do not add manifests, import-string loaders, or a global installation CLI. Public CLIs use direct Cyclopts views of the same documented functions callers import from Python. Private child-process protocol code may parse its own arguments because it is not a user API.
+A hook is one executable PEP 723 file that registers handlers on `shared.HookApp` and calls `app.main()`. Hook files hold only logic. The host files (`.codex/hooks.json`, `.claude/settings.json`) hold the event, matcher, timeout and command, and pass the host name as the only argument. Do not add host configuration generation, installation, manifests, or import-string loaders to this package.

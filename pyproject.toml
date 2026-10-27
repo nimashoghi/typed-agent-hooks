@@ -4,18 +4,14 @@ build-backend = "uv_build"
 
 [project]
 name = "typed-agent-hooks"
-version = "0.2.7"
-description = "Code-first executable hooks and strict schemas for Codex and Claude Code."
+version = "0.3.0"
+description = "Typed hook events and strict wire schemas for Codex and Claude Code."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Nima Shoghi", email = "nimashoghi@gmail.com" }]
-dependencies = [
-  "cyclopts>=4.23.2,<5",
-  "pydantic>=2.8,<3",
-  "pydantic-core",
-]
+dependencies = ["pydantic>=2.8,<3"]
 keywords = ["codex", "claude-code", "hooks", "pydantic", "schemas"]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -27,19 +23,11 @@ classifiers = [
   "Typing :: Typed",
 ]
 
-[project.optional-dependencies]
-# Server-side FastMCP bridge (HookBridge.attach). The forwarding process does
-# not require this extra.
-fastmcp = ["fastmcp>=4.0.3,<5"]
-
 [project.urls]
 Repository = "https://github.com/nimashoghi/typed-agent-hooks"
 
-[project.scripts]
-tah-fastmcp-forward = "typed_agent_hooks.fastmcp.shim:app"
-
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.15", "ty>=0.0.50,<0.1", "fastmcp>=4.0.3,<5"]
+dev = ["pytest>=8", "ruff>=0.15", "ty>=0.0.50,<0.1"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
@@ -54,9 +42,6 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.ty.environment]
 python-version = "3.10"
-# rendezvous targets Linux APIs (geteuid/AF_UNIX/SO_PEERCRED); without the pin
-# ty infers the host OS and flags them on Windows/macOS dev machines.
-python-platform = "linux"
 root = ["./src"]
 
 [tool.ty.src]

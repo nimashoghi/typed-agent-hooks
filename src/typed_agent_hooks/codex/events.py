@@ -1,23 +1,9 @@
 """Codex command-hook input schemas: tolerant readers, strict declared fields."""
 
-from typing import Annotated, Literal, TypeAlias
-
-from pydantic import Field, TypeAdapter
+from typing import Literal, TypeAlias, cast
 
 from typed_agent_hooks.core import InputModel, Json, JsonInput, parse_json_object
 
-CodexEventName: TypeAlias = Literal[
-    "SessionStart",
-    "SubagentStart",
-    "PreToolUse",
-    "PermissionRequest",
-    "PostToolUse",
-    "PreCompact",
-    "PostCompact",
-    "UserPromptSubmit",
-    "SubagentStop",
-    "Stop",
-]
 PermissionMode: TypeAlias = Literal[
     "default", "acceptEdits", "plan", "dontAsk", "bypassPermissions"
 ]
@@ -31,8 +17,10 @@ class BaseInput(InputModel):
     session_id: str
     transcript_path: str | None
     cwd: str
-    hook_event_name: CodexEventName
+    hook_event_name: str
     model: str
+    # Absent on PreCompact and PostCompact.
+    permission_mode: PermissionMode | None = None
     # Present on events fired from a subagent's context (observed live on
     # PreToolUse/PostToolUse in collaboration mode); absent on the main thread.
     agent_id: str | None = None
@@ -41,13 +29,11 @@ class BaseInput(InputModel):
 
 class SessionStartInput(BaseInput):
     hook_event_name: Literal["SessionStart"]
-    permission_mode: PermissionMode
     source: StartSource
 
 
 class SubagentStartInput(BaseInput):
     hook_event_name: Literal["SubagentStart"]
-    permission_mode: PermissionMode
     turn_id: str
     agent_id: str
     agent_type: str
@@ -55,7 +41,6 @@ class SubagentStartInput(BaseInput):
 
 class PreToolUseInput(BaseInput):
     hook_event_name: Literal["PreToolUse"]
-    permission_mode: PermissionMode
     turn_id: str
     tool_name: str
     tool_use_id: str
@@ -64,7 +49,6 @@ class PreToolUseInput(BaseInput):
 
 class PermissionRequestInput(BaseInput):
     hook_event_name: Literal["PermissionRequest"]
-    permission_mode: PermissionMode
     turn_id: str
     tool_name: str
     tool_input: Json
@@ -72,7 +56,6 @@ class PermissionRequestInput(BaseInput):
 
 class PostToolUseInput(BaseInput):
     hook_event_name: Literal["PostToolUse"]
-    permission_mode: PermissionMode
     turn_id: str
     tool_name: str
     tool_use_id: str
@@ -94,14 +77,12 @@ class PostCompactInput(BaseInput):
 
 class UserPromptSubmitInput(BaseInput):
     hook_event_name: Literal["UserPromptSubmit"]
-    permission_mode: PermissionMode
     turn_id: str
     prompt: str
 
 
 class SubagentStopInput(BaseInput):
     hook_event_name: Literal["SubagentStop"]
-    permission_mode: PermissionMode
     turn_id: str
     agent_id: str
     agent_type: str
@@ -112,13 +93,12 @@ class SubagentStopInput(BaseInput):
 
 class StopInput(BaseInput):
     hook_event_name: Literal["Stop"]
-    permission_mode: PermissionMode
     turn_id: str
     stop_hook_active: bool
     last_assistant_message: str | None
 
 
-AnyInput: TypeAlias = Annotated[
+AnyInput: TypeAlias = (
     SessionStartInput
     | SubagentStartInput
     | PreToolUseInput
@@ -128,39 +108,34 @@ AnyInput: TypeAlias = Annotated[
     | PostCompactInput
     | UserPromptSubmitInput
     | SubagentStopInput
-    | StopInput,
-    Field(discriminator="hook_event_name"),
-]
-
-INPUT_ADAPTER: TypeAdapter[AnyInput] = TypeAdapter(AnyInput)
-EVENT_NAMES: tuple[CodexEventName, ...] = (
-    "SessionStart",
-    "SubagentStart",
-    "PreToolUse",
-    "PermissionRequest",
-    "PostToolUse",
-    "PreCompact",
-    "PostCompact",
-    "UserPromptSubmit",
-    "SubagentStop",
-    "Stop",
+    | StopInput
 )
 
-EVENT_NAME_BY_TYPE: dict[type[BaseInput], CodexEventName] = {
-    SessionStartInput: "SessionStart",
-    SubagentStartInput: "SubagentStart",
-    PreToolUseInput: "PreToolUse",
-    PermissionRequestInput: "PermissionRequest",
-    PostToolUseInput: "PostToolUse",
-    PreCompactInput: "PreCompact",
-    PostCompactInput: "PostCompact",
-    UserPromptSubmitInput: "UserPromptSubmit",
-    SubagentStopInput: "SubagentStop",
-    StopInput: "Stop",
+INPUT_TYPES: dict[str, type[BaseInput]] = {
+    "SessionStart": SessionStartInput,
+    "SubagentStart": SubagentStartInput,
+    "PreToolUse": PreToolUseInput,
+    "PermissionRequest": PermissionRequestInput,
+    "PostToolUse": PostToolUseInput,
+    "PreCompact": PreCompactInput,
+    "PostCompact": PostCompactInput,
+    "UserPromptSubmit": UserPromptSubmitInput,
+    "SubagentStop": SubagentStopInput,
+    "Stop": StopInput,
 }
+"""Input model by native ``hook_event_name``."""
 
 
 def parse_input(data: JsonInput) -> AnyInput:
-    """Strictly parse one Codex command-hook input payload."""
+    """Strictly parse one Codex command-hook input payload.
 
-    return INPUT_ADAPTER.validate_python(parse_json_object(data))
+    Only the model that ``hook_event_name`` names is validated, so a hook run
+    builds one input schema instead of the schema of every event.
+    """
+
+    payload = parse_json_object(data)
+    name = payload.get("hook_event_name")
+    input_type = INPUT_TYPES.get(name) if isinstance(name, str) else None
+    if input_type is None:
+        raise ValueError(f"unsupported Codex hook event {name!r}")
+    return cast(AnyInput, input_type.model_validate(payload))

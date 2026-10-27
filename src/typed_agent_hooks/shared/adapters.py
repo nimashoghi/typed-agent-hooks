@@ -1,13 +1,11 @@
-"""Explicit provider-to-shared event adapters."""
+"""Explicit host-to-shared event adapters."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
-from typed_agent_hooks.core import JsonInput, Provider
+from typed_agent_hooks import claude_code, codex
+from typed_agent_hooks.core import Host
 
 from .events import (
     AnyEvent,
+    BaseEvent,
     CompactionFinished,
     CompactionStarting,
     EventContext,
@@ -22,52 +20,63 @@ from .events import (
     TurnStopped,
 )
 
-if TYPE_CHECKING:
-    from typed_agent_hooks import claude_code, codex
+NATIVE_EVENT_NAMES: dict[Host, dict[type[BaseEvent], str]] = {
+    "codex": {
+        SessionStarted: "SessionStart",
+        PromptSubmitted: "UserPromptSubmit",
+        ToolCallProposed: "PreToolUse",
+        PermissionRequested: "PermissionRequest",
+        ToolCallCompleted: "PostToolUse",
+        CompactionStarting: "PreCompact",
+        CompactionFinished: "PostCompact",
+        SubagentStarted: "SubagentStart",
+        SubagentStopped: "SubagentStop",
+        TurnStopped: "Stop",
+    },
+    "claude": {
+        SessionStarted: "SessionStart",
+        PromptSubmitted: "UserPromptSubmit",
+        ToolCallProposed: "PreToolUse",
+        PermissionRequested: "PermissionRequest",
+        ToolCallCompleted: "PostToolUse",
+        ToolCallFailed: "PostToolUseFailure",
+        CompactionStarting: "PreCompact",
+        CompactionFinished: "PostCompact",
+        SubagentStarted: "SubagentStart",
+        SubagentStopped: "SubagentStop",
+        TurnStopped: "Stop",
+    },
+}
 
 
-class NoSharedMappingError(ValueError):
-    """Raised when a provider-only event has no shared semantic mapping."""
+def native_event_name(event_type: type[BaseEvent], host: Host) -> str | None:
+    """Return the host's native hook event name for a shared event type.
+
+    Returns ``None`` when the host has no such event (Codex has no
+    ``ToolCallFailed``). Host files register a hook under this name.
+    """
+
+    return NATIVE_EVENT_NAMES[host].get(event_type)
 
 
 def _codex_context(event: codex.events.AnyInput) -> EventContext:
-    from typed_agent_hooks import codex
-
-    if isinstance(
-        event,
-        (
-            codex.events.SessionStartInput,
-            codex.events.SubagentStartInput,
-            codex.events.PreToolUseInput,
-            codex.events.PermissionRequestInput,
-            codex.events.PostToolUseInput,
-            codex.events.UserPromptSubmitInput,
-            codex.events.SubagentStopInput,
-            codex.events.StopInput,
-        ),
-    ):
-        permission_mode = event.permission_mode
-    else:
-        permission_mode = None
     return EventContext(
-        provider=Provider.CODEX,
+        host="codex",
         source_event=event.hook_event_name,
         session_id=event.session_id,
         transcript_path=event.transcript_path,
         cwd=event.cwd,
         model=event.model,
-        permission_mode=permission_mode,
+        permission_mode=event.permission_mode,
         agent_id=event.agent_id,
         agent_type=event.agent_type,
     )
 
 
 def _claude_context(event: claude_code.events.AnyInput) -> EventContext:
-    from typed_agent_hooks import claude_code
-
     model = event.model if isinstance(event, claude_code.events.SessionStartInput) else None
     return EventContext(
-        provider=Provider.CLAUDE_CODE,
+        host="claude",
         source_event=event.hook_event_name,
         session_id=event.session_id,
         transcript_path=event.transcript_path,
@@ -83,8 +92,6 @@ def _claude_context(event: claude_code.events.AnyInput) -> EventContext:
 
 def from_codex(event: codex.events.AnyInput) -> AnyEvent:
     """Map a Codex wire event into its shared semantic event."""
-
-    from typed_agent_hooks import codex
 
     context = _codex_context(event)
     match event:
@@ -147,10 +154,8 @@ def from_codex(event: codex.events.AnyInput) -> AnyEvent:
     raise AssertionError(f"unmapped Codex event type: {type(event).__name__}")
 
 
-def try_from_claude_code(event: claude_code.events.AnyInput) -> AnyEvent | None:
-    """Return a shared event, or ``None`` for a Claude Code-only event."""
-
-    from typed_agent_hooks import claude_code
+def from_claude_code(event: claude_code.events.AnyInput) -> AnyEvent:
+    """Map a Claude Code wire event into its shared semantic event."""
 
     context = _claude_context(event)
     match event:
@@ -225,31 +230,4 @@ def try_from_claude_code(event: claude_code.events.AnyInput) -> AnyEvent | None:
                 stop_hook_active=event.stop_hook_active,
                 last_assistant_message=event.last_assistant_message,
             )
-    return None
-
-
-def from_claude_code(event: claude_code.events.AnyInput) -> AnyEvent:
-    """Map a Claude Code wire event, failing if no shared mapping exists."""
-
-    mapped = try_from_claude_code(event)
-    if mapped is None:
-        raise NoSharedMappingError(
-            f"Claude Code event {event.hook_event_name} has no shared semantic mapping"
-        )
-    return mapped
-
-
-def parse_codex(data: JsonInput) -> AnyEvent:
-    """Parse Codex input and map it into shared mode."""
-
-    from typed_agent_hooks import codex
-
-    return from_codex(codex.parse_input(data))
-
-
-def parse_claude_code(data: JsonInput) -> AnyEvent:
-    """Parse Claude Code input and require a shared mapping."""
-
-    from typed_agent_hooks import claude_code
-
-    return from_claude_code(claude_code.parse_input(data))
+    raise AssertionError(f"unmapped Claude Code event type: {type(event).__name__}")

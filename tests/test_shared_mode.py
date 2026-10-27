@@ -1,13 +1,18 @@
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import pytest
 
 from typed_agent_hooks import claude_code, codex, shared
-from typed_agent_hooks.shared.results import SharedOutputError
+from typed_agent_hooks.core import render_json
+from typed_agent_hooks.shared.adapters import from_claude_code, from_codex
+from typed_agent_hooks.shared.claude_code_outputs import to_claude_code_output
+from typed_agent_hooks.shared.codex_outputs import to_codex_output
+from typed_agent_hooks.shared.outputs import SharedOutputError
 
 FIXTURES = Path(__file__).parent / "fixtures"
+FIXTURE_BY_HOST = {"codex": "codex_inputs.json", "claude": "claude_code_inputs.json"}
 
 
 def _payloads(name: str) -> list[dict[str, object]]:
@@ -20,29 +25,38 @@ def _payload(name: str, event_name: str) -> dict[str, object]:
     return next(item for item in _payloads(name) if item["hook_event_name"] == event_name)
 
 
-def test_codex_events_have_total_shared_mappings() -> None:
-    events = [
-        shared.from_codex(codex.parse_input(payload)) for payload in _payloads("codex_inputs.json")
-    ]
+@pytest.mark.parametrize("host", ["codex", "claude"])
+def test_every_modeled_event_maps_back_to_its_native_name(
+    host: Literal["codex", "claude"],
+) -> None:
+    mapped = set()
+    for payload in _payloads(FIXTURE_BY_HOST[host]):
+        name = payload["hook_event_name"]
+        if host == "codex":
+            event = from_codex(codex.parse_input(payload))
+        elif name in claude_code.events.INPUT_TYPES:
+            event = from_claude_code(claude_code.parse_input(payload))
+        else:
+            continue
+        assert shared.native_event_name(type(event), host) == name
+        mapped.add(type(event))
 
     # ToolCallFailed is Claude Code-only: Codex has no failure primitive and
     # reports failures inside ordinary PostToolUse responses.
-    assert {event.event_name for event in events} == set(shared.events.EVENT_NAMES) - {
-        "ToolCallFailed"
-    }
+    missing = {shared.events.ToolCallFailed} if host == "codex" else set()
+    assert mapped == set(shared.events.EVENT_TYPES) - missing
 
 
-def test_claude_only_event_is_not_coerced_into_shared_mode() -> None:
-    wire_event = claude_code.parse_input(_payload("claude_code_inputs.json", "Notification"))
-
-    assert shared.try_from_claude_code(wire_event) is None
-    with pytest.raises(shared.NoSharedMappingError, match="no shared semantic mapping"):
-        shared.from_claude_code(wire_event)
+def test_codex_has_no_native_tool_failure_event() -> None:
+    assert shared.native_event_name(shared.events.ToolCallFailed, "codex") is None
+    assert shared.native_event_name(shared.events.ToolCallFailed, "claude") == (
+        "PostToolUseFailure"
+    )
 
 
 def test_agent_identity_reaches_shared_context() -> None:
-    codex_event = shared.from_codex(codex.parse_input(_payload("codex_inputs.json", "PostToolUse")))
-    claude_event = shared.from_claude_code(
+    codex_event = from_codex(codex.parse_input(_payload("codex_inputs.json", "PostToolUse")))
+    claude_event = from_claude_code(
         claude_code.parse_input(_payload("claude_code_inputs.json", "PostToolUse"))
     )
 
@@ -54,10 +68,29 @@ def test_agent_identity_reaches_shared_context() -> None:
     assert claude_event.context.agent_type is None
 
 
+def test_claude_tool_failure_carries_a_system_message() -> None:
+    wire_event = claude_code.parse_input(_payload("claude_code_inputs.json", "PostToolUseFailure"))
+    event = from_claude_code(wire_event)
+
+    output = to_claude_code_output(event, shared.outputs.SystemMessage(message="The tool failed."))
+
+    assert output is not None
+    assert render_json(output) == ('{"systemMessage":"The tool failed."}')
+
+
+def test_claude_compaction_without_instructions_maps_to_none() -> None:
+    payload = _payload("claude_code_inputs.json", "PreCompact") | {"custom_instructions": None}
+
+    event = from_claude_code(claude_code.parse_input(payload))
+
+    assert isinstance(event, shared.events.CompactionStarting)
+    assert event.instructions is None
+
+
 def test_claude_failure_maps_to_tool_call_failed() -> None:
     wire_event = claude_code.parse_input(_payload("claude_code_inputs.json", "PostToolUseFailure"))
 
-    event = shared.from_claude_code(wire_event)
+    event = from_claude_code(wire_event)
 
     assert isinstance(event, shared.events.ToolCallFailed)
     assert event.tool_name == "Bash"
@@ -69,7 +102,7 @@ def test_claude_failure_maps_to_tool_call_failed() -> None:
 @pytest.mark.parametrize("event_name", ["UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"])
 def test_claude_prompt_identity_is_preserved_without_inventing_a_turn(event_name: str) -> None:
     payload = {**_payload("claude_code_inputs.json", event_name), "prompt_id": "native-prompt"}
-    event = shared.from_claude_code(claude_code.parse_input(payload))
+    event = from_claude_code(claude_code.parse_input(payload))
     assert event.context.prompt_id == "native-prompt"
     assert getattr(event, "turn_id", None) is None
 
@@ -81,16 +114,16 @@ def test_native_scratchpad_reaches_shared_context(event_name: str) -> None:
     payload = _payload("claude_code_inputs.json", event_name) | {
         "scratchpad_dir": "/tmp/native/scratchpad"
     }
-    event = shared.from_claude_code(claude_code.parse_input(payload))
+    event = from_claude_code(claude_code.parse_input(payload))
     assert event.context.scratchpad_dir == "/tmp/native/scratchpad"
 
 
 def test_shared_output_intent_is_checked_against_the_semantic_event() -> None:
     wire_event = claude_code.parse_input(_payload("claude_code_inputs.json", "PermissionRequest"))
-    event = shared.from_claude_code(wire_event)
+    event = from_claude_code(wire_event)
 
     with pytest.raises(SharedOutputError, match="not portable"):
-        shared.outputs.to_claude_code_output(
+        to_claude_code_output(
             event,
             shared.outputs.AddContext(text="This event has no portable context output."),
         )
@@ -98,10 +131,10 @@ def test_shared_output_intent_is_checked_against_the_semantic_event() -> None:
 
 def test_compaction_context_error_points_to_context_capable_boundary() -> None:
     wire_event = codex.parse_input(_payload("codex_inputs.json", "PostCompact"))
-    event = shared.from_codex(wire_event)
+    event = from_codex(wire_event)
 
     with pytest.raises(SharedOutputError) as raised:
-        shared.outputs.to_codex_output(
+        to_codex_output(
             event,
             shared.outputs.AddContext(text="Re-ground the compacted session."),
         )
@@ -109,25 +142,124 @@ def test_compaction_context_error_points_to_context_capable_boundary() -> None:
     assert str(raised.value) == (
         "AddContext is not portable for CompactionFinished (codex PostCompact); "
         "valid events: PromptSubmitted, SessionStarted, SubagentStarted, "
-        "ToolCallCompleted, ToolCallProposed. Return post-compaction context from "
-        "SessionStarted(source='compact') instead"
+        "ToolCallCompleted, ToolCallFailed, ToolCallProposed. Compaction events only "
+        "observe; for context after compaction, return AddContext from "
+        "SessionStarted(source='compact')"
     )
 
 
-def test_shared_app_requires_explicit_provider_at_runtime() -> None:
+@pytest.mark.parametrize("event_name", ["PreCompact", "PostCompact"])
+@pytest.mark.parametrize(
+    "result",
+    [
+        shared.outputs.SystemMessage(message="Compacting."),
+        shared.outputs.Block(reason="Not now."),
+        shared.outputs.Stop(reason="Stop here."),
+    ],
+)
+def test_compaction_events_accept_no_result(event_name: str, result: object) -> None:
+    codex_event = from_codex(codex.parse_input(_payload("codex_inputs.json", event_name)))
+    claude_event = from_claude_code(
+        claude_code.parse_input(_payload("claude_code_inputs.json", event_name))
+    )
+
+    with pytest.raises(SharedOutputError, match="Compaction events only observe"):
+        to_codex_output(codex_event, cast(Any, result))
+    with pytest.raises(SharedOutputError, match="Compaction events only observe"):
+        to_claude_code_output(claude_event, cast(Any, result))
+
+
+@pytest.mark.parametrize(
+    ("event_name", "result"),
+    [
+        ("SessionStart", shared.outputs.Stop(reason="Stop here.")),
+        ("PostToolUse", shared.outputs.Stop(reason="Stop here.")),
+        ("PostToolUse", shared.outputs.Block(reason="Bad output.")),
+    ],
+)
+def test_results_are_refused_where_the_hosts_differ(event_name: str, result: object) -> None:
+    codex_event = from_codex(codex.parse_input(_payload("codex_inputs.json", event_name)))
+    claude_event = from_claude_code(
+        claude_code.parse_input(_payload("claude_code_inputs.json", event_name))
+    )
+
+    with pytest.raises(SharedOutputError, match="not portable"):
+        to_codex_output(codex_event, cast(Any, result))
+    with pytest.raises(SharedOutputError, match="not portable"):
+        to_claude_code_output(claude_event, cast(Any, result))
+
+
+def test_allow_tool_without_updated_input_is_claude_code_only() -> None:
+    codex_event = from_codex(codex.parse_input(_payload("codex_inputs.json", "PreToolUse")))
+    claude_event = from_claude_code(
+        claude_code.parse_input(_payload("claude_code_inputs.json", "PreToolUse"))
+    )
+    allow = shared.outputs.AllowTool(reason="Safe command.")
+
+    with pytest.raises(SharedOutputError, match="only with updated_input"):
+        to_codex_output(codex_event, allow)
+    rewrite = shared.outputs.AllowTool(updated_input={"command": "echo safe"})
+    assert render_json(cast(Any, to_codex_output(codex_event, rewrite))) == (
+        '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow",'
+        '"updatedInput":{"command":"echo safe"}}}'
+    )
+    assert render_json(cast(Any, to_claude_code_output(claude_event, allow))) == (
+        '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow",'
+        '"permissionDecisionReason":"Safe command."}}'
+    )
+
+
+@pytest.mark.parametrize(
+    ("event_name", "result", "rendered"),
+    [
+        (
+            "PreToolUse",
+            shared.outputs.DenyTool(reason="Not allowed."),
+            '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",'
+            '"permissionDecisionReason":"Not allowed."}}',
+        ),
+        (
+            "UserPromptSubmit",
+            shared.outputs.Block(reason="Rephrase."),
+            '{"decision":"block","reason":"Rephrase."}',
+        ),
+        (
+            "Stop",
+            shared.outputs.Stop(reason="Done."),
+            '{"continue":false,"stopReason":"Done."}',
+        ),
+        (
+            "PostToolUse",
+            shared.outputs.SystemMessage(message="Checked."),
+            '{"systemMessage":"Checked."}',
+        ),
+    ],
+)
+@pytest.mark.parametrize("host", ["codex", "claude"])
+def test_results_render_the_same_wire_in_both_hosts(
+    host: str, event_name: str, result: object, rendered: str
+) -> None:
+    payload = _payload(FIXTURE_BY_HOST[host], event_name)
+    if host == "codex":
+        output = to_codex_output(from_codex(codex.parse_input(payload)), cast(Any, result))
+    else:
+        output = to_claude_code_output(
+            from_claude_code(claude_code.parse_input(payload)), cast(Any, result)
+        )
+
+    assert render_json(cast(Any, output)) == rendered
+
+
+def test_shared_app_handles_one_host_payload() -> None:
     app = shared.HookApp(name="test")
 
     @app.on(shared.events.PromptSubmitted)
-    def add_context(
-        _event: shared.events.AnyEvent,
-    ) -> shared.outputs.Result:
+    def add_context(_event: shared.events.PromptSubmitted) -> shared.outputs.Result:
         return shared.outputs.AddContext(text="Check project tests first.")
 
     payload = _payload("codex_inputs.json", "UserPromptSubmit")
-    # The public Provider enum is explicit; no provider auto-detection occurs.
-    from typed_agent_hooks.core import Provider
 
-    rendered = app.handle_json(Provider.CODEX, payload)
+    rendered = app.handle("codex", payload)
 
     assert rendered == (
         '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit",'
@@ -136,19 +268,19 @@ def test_shared_app_requires_explicit_provider_at_runtime() -> None:
 
 
 @pytest.mark.parametrize("source", ["startup", "resume", "clear", "compact", "fork"])
-@pytest.mark.parametrize("provider", ["codex", "claude_code"])
-def test_session_start_source_reaches_shared_handler(source: str, provider: str) -> None:
-    from typed_agent_hooks.core import Provider
-
+@pytest.mark.parametrize("host", ["codex", "claude"])
+def test_session_start_source_reaches_shared_handler(
+    source: str, host: Literal["codex", "claude"]
+) -> None:
     app = shared.HookApp(name="session-source")
 
     @app.on(shared.events.SessionStarted)
     def add_context(event: shared.events.SessionStarted) -> shared.outputs.Result:
         return shared.outputs.AddContext(text=f"Session source: {event.source}")
 
-    payload = _payload(f"{provider}_inputs.json", "SessionStart") | {"source": source}
+    payload = _payload(FIXTURE_BY_HOST[host], "SessionStart") | {"source": source}
 
-    rendered = app.handle_json(Provider(provider), payload)
+    rendered = app.handle(host, payload)
 
     assert rendered is not None
     assert json.loads(rendered) == {
@@ -159,19 +291,17 @@ def test_session_start_source_reaches_shared_handler(source: str, provider: str)
     }
 
 
-def test_shared_permission_decisions_render_for_both_providers() -> None:
-    codex_event = shared.from_codex(
-        codex.parse_input(_payload("codex_inputs.json", "PermissionRequest"))
-    )
-    claude_event = shared.from_claude_code(
+def test_shared_permission_decisions_render_for_both_hosts() -> None:
+    codex_event = from_codex(codex.parse_input(_payload("codex_inputs.json", "PermissionRequest")))
+    claude_event = from_claude_code(
         claude_code.parse_input(_payload("claude_code_inputs.json", "PermissionRequest"))
     )
 
-    codex_output = shared.outputs.to_codex_output(
+    codex_output = to_codex_output(
         codex_event,
         shared.outputs.DenyPermission(reason="Approval required by policy."),
     )
-    claude_output = shared.outputs.to_claude_code_output(
+    claude_output = to_claude_code_output(
         claude_event,
         shared.outputs.AllowPermission(),
     )
@@ -190,3 +320,49 @@ def test_registration_uses_event_models_not_strings() -> None:
 
     with pytest.raises(ValueError, match="unsupported event model"):
         app.on(cast(Any, codex.events.UserPromptSubmitInput))
+
+
+ALL_EVENTS = {event_type.__name__ for event_type in shared.events.EVENT_TYPES}
+COMPACTION = {"CompactionStarting", "CompactionFinished"}
+# The README results table, row by row.
+VALID_EVENTS: list[tuple[object, set[str]]] = [
+    (
+        shared.outputs.AddContext(text="Context."),
+        {
+            "SessionStarted",
+            "PromptSubmitted",
+            "ToolCallProposed",
+            "ToolCallCompleted",
+            "ToolCallFailed",
+            "SubagentStarted",
+        },
+    ),
+    (shared.outputs.SystemMessage(message="Note."), ALL_EVENTS - COMPACTION),
+    (shared.outputs.Block(reason="No."), {"PromptSubmitted", "SubagentStopped", "TurnStopped"}),
+    (shared.outputs.Stop(reason="Stop."), {"PromptSubmitted", "SubagentStopped", "TurnStopped"}),
+    (shared.outputs.AllowTool(updated_input={"command": "true"}), {"ToolCallProposed"}),
+    (shared.outputs.DenyTool(reason="No."), {"ToolCallProposed"}),
+    (shared.outputs.AllowPermission(), {"PermissionRequested"}),
+    (shared.outputs.DenyPermission(reason="No."), {"PermissionRequested"}),
+]
+
+
+@pytest.mark.parametrize("host", ["codex", "claude"])
+@pytest.mark.parametrize(("result", "valid"), VALID_EVENTS)
+def test_each_result_renders_exactly_on_its_valid_events(
+    host: str, result: object, valid: set[str]
+) -> None:
+    for payload in _payloads(FIXTURE_BY_HOST[host]):
+        if host == "codex":
+            event = from_codex(codex.parse_input(payload))
+            convert = to_codex_output
+        elif payload["hook_event_name"] in claude_code.events.INPUT_TYPES:
+            event = from_claude_code(claude_code.parse_input(payload))
+            convert = to_claude_code_output
+        else:
+            continue
+        if event.event_name in valid:
+            assert render_json(cast(Any, convert(cast(Any, event), cast(Any, result))))
+        else:
+            with pytest.raises(SharedOutputError):
+                convert(cast(Any, event), cast(Any, result))

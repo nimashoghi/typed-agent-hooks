@@ -1,11 +1,10 @@
-"""Provider-independent semantic events shared by Codex and Claude Code."""
+"""Host-independent semantic events shared by Codex and Claude Code."""
 
-from typing import Annotated, Literal, TypeAlias
+from typing import Literal, TypeAlias, get_args
 
-from pydantic import Field, TypeAdapter
+from pydantic import Field
 
-from typed_agent_hooks._delivery import response_available as _delivery_response
-from typed_agent_hooks.core import Json, Provider, StrictModel
+from typed_agent_hooks.core import Host, Json, StrictModel
 
 SharedEventName: TypeAlias = Literal[
     "SessionStarted",
@@ -26,9 +25,9 @@ PermissionMode: TypeAlias = Literal[
 
 
 class EventContext(StrictModel):
-    """Provider provenance and session metadata for a shared event."""
+    """Host provenance and session metadata for a shared event."""
 
-    provider: Provider
+    host: Host
     source_event: str
     session_id: str
     transcript_path: str | None
@@ -36,15 +35,12 @@ class EventContext(StrictModel):
     model: str | None = None
     permission_mode: PermissionMode | None = None
     # Set when the event fired from a subagent's context; None on the main
-    # thread. Both providers stamp these on subagent-scoped tool events.
+    # thread. Both hosts stamp these on subagent-scoped tool events.
     agent_id: str | None = None
     agent_type: str | None = None
     # Claude's native prompt identity is distinct from its display turn ID.
     prompt_id: str | None = None
     scratchpad_dir: str | None = None
-    # Buffered bridge events still run observers, but their original hook process
-    # has exited. Handlers must defer context until a live event can return it.
-    response_available: bool = Field(default_factory=lambda: _delivery_response.get())
 
 
 class BaseEvent(StrictModel):
@@ -94,9 +90,10 @@ class ToolCallFailed(BaseEvent):
     """A tool call that ended in failure rather than a result.
 
     Claude Code only: it routes a failing call to `PostToolUseFailure` instead
-    of `PostToolUse`, so a completed call implies success there. Codex has no
-    failure primitive and reports failures inside ordinary `ToolCallCompleted`
-    responses, so it never emits this event.
+    of `PostToolUse`. Codex never emits this event. It sends a shell command
+    that exits non-zero as an ordinary `ToolCallCompleted` (the exit code is in
+    the output), and it sends no hook for some other failures, such as an MCP
+    tool error.
     """
 
     event_name: Literal["ToolCallFailed"] = "ToolCallFailed"
@@ -147,7 +144,7 @@ class TurnStopped(BaseEvent):
     last_assistant_message: str | None
 
 
-AnyEvent: TypeAlias = Annotated[
+AnyEvent: TypeAlias = (
     SessionStarted
     | PromptSubmitted
     | ToolCallProposed
@@ -158,35 +155,7 @@ AnyEvent: TypeAlias = Annotated[
     | CompactionFinished
     | SubagentStarted
     | SubagentStopped
-    | TurnStopped,
-    Field(discriminator="event_name"),
-]
-
-EVENT_ADAPTER: TypeAdapter[AnyEvent] = TypeAdapter(AnyEvent)
-EVENT_NAMES: tuple[SharedEventName, ...] = (
-    "SessionStarted",
-    "PromptSubmitted",
-    "ToolCallProposed",
-    "PermissionRequested",
-    "ToolCallCompleted",
-    "ToolCallFailed",
-    "CompactionStarting",
-    "CompactionFinished",
-    "SubagentStarted",
-    "SubagentStopped",
-    "TurnStopped",
+    | TurnStopped
 )
 
-EVENT_NAME_BY_TYPE: dict[type[BaseEvent], SharedEventName] = {
-    SessionStarted: "SessionStarted",
-    PromptSubmitted: "PromptSubmitted",
-    ToolCallProposed: "ToolCallProposed",
-    PermissionRequested: "PermissionRequested",
-    ToolCallCompleted: "ToolCallCompleted",
-    ToolCallFailed: "ToolCallFailed",
-    CompactionStarting: "CompactionStarting",
-    CompactionFinished: "CompactionFinished",
-    SubagentStarted: "SubagentStarted",
-    SubagentStopped: "SubagentStopped",
-    TurnStopped: "TurnStopped",
-}
+EVENT_TYPES: tuple[type[BaseEvent], ...] = get_args(AnyEvent)

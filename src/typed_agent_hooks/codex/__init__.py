@@ -1,15 +1,6 @@
-"""Codex-specific schemas, outputs, and configuration."""
+"""Codex command-hook wire schemas."""
 
-from . import config, events, outputs
-from .events import EVENT_NAMES, INPUT_ADAPTER, parse_input
-from .outputs import render_output
+from . import events, outputs
+from .events import parse_input
 
-__all__ = [
-    "EVENT_NAMES",
-    "INPUT_ADAPTER",
-    "config",
-    "events",
-    "outputs",
-    "parse_input",
-    "render_output",
-]
+__all__ = ["events", "outputs", "parse_input"]
