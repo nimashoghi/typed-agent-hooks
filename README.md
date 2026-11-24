@@ -12,9 +12,9 @@ Each hook is one executable PEP 723 file:
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.13"
-# dependencies = ["typed-agent-hooks==0.3.0"]
+# dependencies = ["typed-agent-hooks==0.4.0"]
 # [tool.uv]
-# exclude-newer = "2026-10-25T00:00:00Z"
+# exclude-newer = "2026-11-25T00:00:00Z"
 # ///
 """Suggest the notebook when a Bash command runs inline Python."""
 
@@ -35,7 +35,7 @@ if __name__ == "__main__":
     app.main()
 ```
 
-uv uses only uploads from before the `exclude-newer` date, for every package. Set it to a time after the upload of the pinned `typed-agent-hooks` release, or uv cannot find that release. The date also freezes the other dependencies. The date in the example comes from before the 0.3.0 upload; replace it when you pin a release.
+uv uses only uploads from before the `exclude-newer` date, for every package. Set it to a time after the upload of the pinned `typed-agent-hooks` release, or uv cannot find that release. The date also freezes the other dependencies.
 
 ## Host files
 
@@ -75,19 +75,21 @@ Claude Code, in `.claude/settings.json`:
 }
 ```
 
-agy, in `.agents/hooks.json`. agy runs a hook command in the folder that holds this file, so the path starts with `../`:
+agy gives hooks no tool output and takes no context after a tool call, so the hook above does nothing useful there (see [agy](#agy)). A hook that adds context when a session starts works in all three hosts:
+
+```python
+@app.on(shared.events.SessionStarted)
+def session_started(event: shared.events.SessionStarted) -> shared.outputs.Result:
+    return shared.outputs.AddContext(text="Run the tests with uv run pytest.")
+```
+
+agy reads it from `.agents/hooks.json`, which names each hook. agy runs a hook command in the folder that holds this file, so the path starts with `../`:
 
 ```json
 {
   "project-guide": {
     "SessionStart": [
       { "type": "command", "command": "../.agent-hooks/project-guide.py agy || true", "timeout": 10 }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "run_command",
-        "hooks": [{ "type": "command", "command": "../.agent-hooks/project-guide.py agy || true", "timeout": 5 }]
-      }
     ]
   }
 }
@@ -148,7 +150,7 @@ A handler returns one result from `shared.outputs`, or `None`. Each result is va
 | Result | Valid events | Notes |
 | --- | --- | --- |
 | `None` | every event | Writes nothing. |
-| `AddContext` | `SessionStarted`, `PromptSubmitted`, `ToolCallProposed`, `ToolCallCompleted`, `ToolCallFailed`, `SubagentStarted` | `ToolCallFailed` is Claude Code only. |
+| `AddContext` | `SessionStarted`, `PromptSubmitted`, `ToolCallProposed`, `ToolCallCompleted`, `ToolCallFailed`, `SubagentStarted` | Codex has no `ToolCallFailed`. |
 | `SystemMessage` | every event except `CompactionStarting` and `CompactionFinished` | Claude Code ignores `systemMessage` on compaction events. |
 | `Block` | `PromptSubmitted`, `SubagentStopped`, `TurnStopped` | It carries no context: on a blocked prompt, Codex keeps the context for the next turn and Claude Code drops it. Not on `ToolCallCompleted`: Claude Code keeps the tool output next to the reason, and Codex replaces it. |
 | `Stop` | `PromptSubmitted`, `SubagentStopped`, `TurnStopped` | A stated host difference: Claude Code keeps `stopReason` in the conversation, so the model sees it if the conversation continues, while Codex does not give it to the model. Not on `SessionStarted` (Claude Code has no decision control there) or `ToolCallCompleted` (Codex turns it into model feedback and continues). |
@@ -162,24 +164,25 @@ The compaction events accept no result except `None`. For context after compacti
 
 agy fires different events from the other two hosts, and its outputs carry less. These notes come from agy 1.5.16.
 
-- agy has no prompt event. `PreInvocation` fires before every model call, and the package reports `PromptSubmitted` only for a call that answers a user prompt. For any other call, `main()` runs no handler and writes nothing. agy also starts a model run for a message from `agentapi send-message` and for a Stop hook that continues the turn, and it gives each of these runs the previous prompt as `lastUserInput`. To tell them apart, the package reads the conversation transcript: before a call that answers a prompt, the last step is the user's input, after any system messages that hooks added. A hook registered on `PreInvocation` still starts a process before every model call.
+- agy has no prompt event. `PreInvocation` fires before every model call. The package reports `PromptSubmitted` only for the first call of a run (`invocationNum` 0) that answers a user prompt; for any other call, `main()` runs no handler and writes nothing. agy also starts a run for a message from `agentapi send-message` and for a Stop hook that continues the turn, and it gives each of these runs the previous prompt as `lastUserInput`. To tell them apart, the package reads the first `initialNumSteps` steps of the conversation transcript: before a call that answers a prompt, the last of them that is not a system message from a hook is the user's input. A hook registered on `PreInvocation` still starts a process before every model call.
 - `SessionStart` fires only for a new conversation, not when agy resumes one, so `source` is always `"startup"`.
 - `PostToolUse` carries both `ToolCallCompleted` and `ToolCallFailed` (when agy reports an `error`). A hook that handles only one of them writes nothing for the other. `tool_response` is `None`: agy gives hooks no tool output.
 - agy sends no permission mode, turn ID or last assistant message.
 - agy leaves `continuationActive` false after a Stop hook continued the turn, so `TurnStopped.stop_hook_active` also reads `executionNum`, the number of continuations in the turn.
+- agy has no way to show a hook's message to the user: its terminal does not show a system message whose `metadata.user_markdown` is set, and the model then does not get the step either. So the package leaves out the `system_message` of `AddContext`, `Block`, `AllowTool` and `DenyTool` for agy.
 
 Results that agy can carry:
 
 | Result | agy events | Notes |
 | --- | --- | --- |
+| `None` | every agy event | Writes nothing. |
 | `AddContext` | `SessionStarted`, `PromptSubmitted` | A system message step that the model reads. |
-| `SystemMessage` | `SessionStarted`, `PromptSubmitted` | A system message step whose Markdown agy shows to the user and does not send to the model. |
-| `Block`, `Stop` | `PromptSubmitted` | Ends the turn before the model call and shows the reason to the user as an error. agy has already added the prompt to the conversation. |
+| `Block` | `PromptSubmitted` | Ends the turn before the model call and shows the reason to the user as an error; `agy -p` then exits 3. agy has already added the prompt to the conversation. |
 | `Block` | `TurnStopped` | Continues the turn; agy gives the reason to the model as a system message. |
-| `AllowTool` | `ToolCallProposed` | Allows the call without a permission prompt. agy merges `updated_input` into the arguments, so `updated_input` must keep every argument. |
+| `AllowTool` | `ToolCallProposed` | agy's `allow` decision, with `updated_input` as `overwrite`. agy merges it into the arguments that it sent, so it must keep every argument. Whether agy still asks for permission depends on its permission settings. |
 | `DenyTool` | `ToolCallProposed` | |
 
-Every other result raises `SharedOutputError` for agy, including context on a tool event, a system message on `AllowTool`, `DenyTool` or `TurnStopped`, and `Stop` on `TurnStopped`.
+Every other result raises `SharedOutputError` for agy: `SystemMessage` (agy shows no hook message to the user), `Stop` (agy ends a turn early only as an error; use `Block`), and context on a tool event or a tool decision.
 
 ## Host wire schemas
 

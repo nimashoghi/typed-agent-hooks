@@ -94,8 +94,10 @@ def parse_json_object(data: JsonInput) -> dict[str, object]:
 def render_json(model: BaseModel) -> str:
     """Render a Pydantic model as compact host wire JSON."""
 
+    # NaN and Infinity are not JSON; json.dumps would write them anyway.
     return json.dumps(
         model.model_dump(by_alias=True, exclude_none=True),
         ensure_ascii=False,
         separators=(",", ":"),
+        allow_nan=False,
     )

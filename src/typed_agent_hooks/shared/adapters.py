@@ -1,7 +1,6 @@
 """Explicit host-to-shared event adapters."""
 
 import json
-from collections import deque
 from itertools import islice
 from pathlib import Path
 
@@ -251,20 +250,27 @@ def from_claude_code(event: claude_code.events.AnyInput) -> AnyEvent:
 
 
 def _answers_user_input(transcript: Path, steps: int) -> bool:
-    """Whether the model call that agy is about to make answers a user prompt.
+    """Whether the first model call of a run answers a user prompt.
 
     A user prompt, a message from ``agentapi send-message`` and a Stop hook
-    that continues the turn all start a model run, and agy gives each the
-    previous prompt as ``lastUserInput``. The transcript holds one JSON step
-    per line. Before a call that answers a prompt, the last of the first
-    ``steps`` steps is the user's input, after any system messages that hooks
-    injected. Before any other call, it is the model's response or a tool result.
+    that continues the turn all start a run, and agy gives each the previous
+    prompt as ``lastUserInput``. The transcript holds one JSON step per line.
+    Before a call that answers a prompt, the last of the first ``steps`` steps
+    that is not a system message (which hooks inject after the prompt) is the
+    user's input. Before any other call, it is the model's response or a tool
+    result.
     """
 
     with transcript.open(encoding="utf-8") as lines:
-        recent = deque(islice(lines, steps), maxlen=64)
-    for line in reversed(recent):
+        prefix = list(islice(lines, steps))
+    if len(prefix) < steps:
+        raise ValueError(
+            f"{transcript} has {len(prefix)} steps, fewer than initialNumSteps {steps}"
+        )
+    for line in reversed(prefix):
         kind = json.loads(line).get("type")
+        if not isinstance(kind, str):
+            raise ValueError(f"{transcript} has a step without a type")
         if kind != "SYSTEM_MESSAGE":
             return kind == "USER_INPUT"
     return False
@@ -273,7 +279,9 @@ def _answers_user_input(transcript: Path, steps: int) -> bool:
 def from_agy(event: agy.events.AnyInput) -> AnyEvent | None:
     """Map an agy wire event into its shared semantic event.
 
-    Returns ``None`` for a PreInvocation that does not answer a user prompt.
+    Returns ``None`` for a PreInvocation that does not answer a user prompt:
+    one after the first model call of a run, or the first call of a run that a
+    background message or a Stop hook started.
     """
 
     context = EventContext(
@@ -289,7 +297,9 @@ def from_agy(event: agy.events.AnyInput) -> AnyEvent | None:
             # agy fires SessionStart only for a new conversation.
             return SessionStarted(context=context, source="startup")
         case agy.events.PreInvocationInput():
-            if not _answers_user_input(Path(event.transcript_path), event.initial_num_steps):
+            if event.invocation_num > 0 or not _answers_user_input(
+                Path(event.transcript_path), event.initial_num_steps
+            ):
                 return None
             if event.last_user_input is None:
                 raise ValueError("agy PreInvocation after a user prompt has no lastUserInput")

@@ -7,18 +7,17 @@ from pydantic import Field, model_validator
 from typed_agent_hooks.core import Json, StrictModel
 
 
-class SystemMessageMetadata(StrictModel):
-    # agy shows this Markdown to the user and does not send it to the model.
-    user_markdown: str
-
-
 class SystemMessageStep(StrictModel):
+    """A system message that the model reads. agy 1.5.16 shows it to the user
+    only as a collapsed row, and drops a step that sets the documented
+    ``metadata.user_markdown``, so the model never sees it."""
+
     system_message: str = Field(serialization_alias="systemMessage")
-    metadata: SystemMessageMetadata | None = None
 
 
 class ErrorMessageStep(StrictModel):
-    """An error that agy shows to the user and does not send to the model."""
+    """An error that agy shows to the user and does not send to the model.
+    ``agy -p`` exits 3 after a turn that ends with one."""
 
     user_message: str = Field(serialization_alias="userMessage")
 

@@ -79,8 +79,32 @@ def test_context_carries_the_conversation() -> None:
 
 def test_inputs_ignore_unknown_fields_and_reject_declared_type_drift() -> None:
     assert agy.parse_input(_payload("Stop", unexpected=True)).hook_event_name == "Stop"
+    # Only PreInvocation reads lastUserInput, so another event ignores its type.
+    assert agy.parse_input(_payload("PostToolUse", lastUserInput=["x"]))
     with pytest.raises(ValidationError):
         agy.parse_input(_payload("Stop", executionNum="1"))
+
+
+@pytest.mark.parametrize(
+    ("event_name", "fields"),
+    [
+        # The counters that decide prompts and continuations are required.
+        ("PreInvocation", {"initialNumSteps": None}),
+        ("PreInvocation", {"invocationNum": -1}),
+        ("Stop", {"executionNum": None}),
+        ("Stop", {"executionNum": -1}),
+        # Tool arguments are an object.
+        ("PreToolUse", {"toolCall": {"id": "c", "name": "run_command", "args": ["x"]}}),
+    ],
+)
+def test_inputs_reject_missing_counters_and_non_object_arguments(
+    event_name: str, fields: dict[str, object]
+) -> None:
+    payload = {
+        key: value for key, value in (_payload(event_name) | fields).items() if value is not None
+    }
+    with pytest.raises(ValidationError):
+        agy.parse_input(payload)
 
 
 @pytest.mark.parametrize("name", ["PostInvocation", "UserPromptSubmit", 7, None])
@@ -102,6 +126,8 @@ def test_events_without_a_shared_equivalent_are_rejected(name: object) -> None:
         (["USER_INPUT", "PLANNER_RESPONSE", "SYSTEM_MESSAGE"], 3, False),
         # The second model call of a turn, after a tool call.
         (["USER_INPUT", "PLANNER_RESPONSE", "GENERIC"], 3, False),
+        # Any number of hook system messages after the prompt.
+        (["USER_INPUT"] + ["SYSTEM_MESSAGE"] * 100, 101, True),
     ],
 )
 def test_pre_invocation_is_a_prompt_only_when_it_answers_user_input(
@@ -116,6 +142,18 @@ def test_pre_invocation_is_a_prompt_only_when_it_answers_user_input(
         assert event.prompt == "hello"
     else:
         assert event is None
+
+
+def test_a_transcript_shorter_than_its_steps_raises(tmp_path: Path) -> None:
+    transcript = _transcript(tmp_path, "USER_INPUT")
+
+    with pytest.raises(ValueError, match="fewer than initialNumSteps"):
+        _event("PreInvocation", transcriptPath=transcript, initialNumSteps=2)
+
+
+def test_later_model_calls_of_a_run_are_not_prompts_and_read_no_transcript() -> None:
+    # The fixture's transcript does not exist.
+    assert _event("PreInvocation", invocationNum=3) is None
 
 
 def test_failed_tool_call_and_stop_continuation() -> None:
@@ -139,33 +177,16 @@ def test_failed_tool_call_and_stop_continuation() -> None:
             {"injectSteps": [{"systemMessage": {"systemMessage": "Read the guide."}}]},
         ),
         (
+            # agy shows no hook message to the user, so system_message is left out.
             "PreInvocation",
             shared.outputs.AddContext(text="Context.", system_message="Shown."),
-            {
-                "injectSteps": [
-                    {"systemMessage": {"systemMessage": "Context."}},
-                    {
-                        "systemMessage": {
-                            "systemMessage": "",
-                            "metadata": {"user_markdown": "Shown."},
-                        }
-                    },
-                ]
-            },
+            {"injectSteps": [{"systemMessage": {"systemMessage": "Context."}}]},
         ),
         (
             "PreInvocation",
             shared.outputs.Block(reason="Rephrase."),
             {
                 "injectSteps": [{"errorMessage": {"userMessage": "Rephrase."}}],
-                "terminationBehavior": "terminate",
-            },
-        ),
-        (
-            "PreInvocation",
-            shared.outputs.Stop(reason="Done."),
-            {
-                "injectSteps": [{"errorMessage": {"userMessage": "Done."}}],
                 "terminationBehavior": "terminate",
             },
         ),
@@ -215,33 +236,82 @@ def test_results_render_the_agy_wire(
     [
         ("PreToolUse", shared.outputs.AddContext(text="Context.")),
         ("PostToolUse", shared.outputs.AddContext(text="Context.")),
+        ("SessionStart", shared.outputs.SystemMessage(message="Checked.")),
+        ("PreInvocation", shared.outputs.SystemMessage(message="Checked.")),
         ("PostToolUse", shared.outputs.SystemMessage(message="Checked.")),
         ("Stop", shared.outputs.SystemMessage(message="Checked.")),
+        ("PreInvocation", shared.outputs.Stop(reason="Done.")),
         ("Stop", shared.outputs.Stop(reason="Done.")),
-        ("Stop", shared.outputs.Block(reason="Continue.", system_message="Shown.")),
         ("PreToolUse", shared.outputs.DenyTool(reason="No.", context="Context.")),
         ("PreToolUse", shared.outputs.AllowTool(updated_input={"CommandLine": "true"})),
     ],
 )
-def test_results_that_agy_cannot_carry_raise(event_name: str, result: object) -> None:
-    event = _event(event_name)
+def test_results_that_agy_cannot_carry_raise(
+    tmp_path: Path, event_name: str, result: object
+) -> None:
+    event = _prompt(tmp_path) if event_name == "PreInvocation" else _event(event_name)
     assert event is not None
 
     with pytest.raises(SharedOutputError, match="not supported by agy"):
         to_agy_output(event, cast(Any, result))
 
 
-def test_a_hook_for_one_kind_of_finished_tool_call_ignores_the_other() -> None:
-    # agy sends completed and failed calls as one event, PostToolUse.
-    app = shared.HookApp(name="completed-only")
+@pytest.mark.parametrize(
+    "handled",
+    [
+        set(),
+        {shared.events.ToolCallCompleted},
+        {shared.events.ToolCallFailed},
+        {shared.events.ToolCallCompleted, shared.events.ToolCallFailed},
+    ],
+)
+def test_post_tool_use_reaches_the_handler_of_its_kind(
+    handled: set[type[shared.events.BaseEvent]],
+) -> None:
+    # agy sends completed and failed calls as one event, PostToolUse: a hook
+    # that handles one kind ignores the other, and one that handles neither fails.
+    app = shared.HookApp(name="tools")
+    ran: list[str] = []
+    for event_type in handled:
+        app.on(event_type)(lambda event: ran.append(type(event).__name__))
 
-    @app.on(shared.events.ToolCallCompleted)
-    def completed(_event: shared.events.ToolCallCompleted) -> shared.outputs.Result:
-        return None
+    for fields, kind in (({}, "ToolCallCompleted"), ({"error": "exit 1"}, "ToolCallFailed")):
+        ran.clear()
+        payload = _payload("PostToolUse", **fields)
+        if not handled:
+            with pytest.raises(LookupError, match="no handler"):
+                app.handle("agy", payload)
+            continue
+        assert app.handle("agy", payload) is None
+        assert ran == ([kind] if getattr(shared.events, kind) in handled else [])
 
-    assert app.handle("agy", _payload("PostToolUse", error="exit status 1")) is None
-    with pytest.raises(LookupError, match="no handler"):
-        app.handle("agy", _payload("Stop"))
+
+def test_a_rewrite_is_checked_against_the_arguments_that_agy_sent() -> None:
+    app = shared.HookApp(name="rewrite")
+
+    @app.on(shared.events.ToolCallProposed)
+    def proposed(event: shared.events.ToolCallProposed) -> shared.outputs.Result:
+        assert isinstance(event.tool_input, dict)
+        event.tool_input.pop("WaitMsBeforeAsync")
+        return shared.outputs.AllowTool(updated_input=event.tool_input)
+
+    # agy merges the rewrite into its arguments, so the removed one would stay.
+    with pytest.raises(SharedOutputError, match="cannot remove tool arguments WaitMsBeforeAsync"):
+        app.handle("agy", _payload("PreToolUse"))
+
+
+def test_a_rewrite_with_a_number_that_json_lacks_is_refused() -> None:
+    app = shared.HookApp(name="rewrite")
+
+    @app.on(shared.events.ToolCallProposed)
+    def proposed(event: shared.events.ToolCallProposed) -> shared.outputs.Result:
+        assert isinstance(event.tool_input, dict)
+        return shared.outputs.AllowTool(
+            updated_input={**event.tool_input, "WaitMsBeforeAsync": float("nan")}
+        )
+
+    with pytest.raises(ValueError, match="JSON compliant"):
+        app.handle("agy", _payload("PreToolUse"))
 
 
 def test_results_outside_the_shared_table_raise_as_in_other_hosts() -> None:

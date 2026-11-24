@@ -21,9 +21,6 @@ class BaseInput(InputModel):
     cwd: str
     hook_event_name: str = Field(alias="hookEventName")
     model: str | None = Field(default=None, alias="modelName")
-    # The text of the most recent user prompt. A model run that a background
-    # message or a Stop hook started repeats the prompt before it.
-    last_user_input: str | None = Field(default=None, alias="lastUserInput")
 
 
 class SessionStartInput(BaseInput):
@@ -36,15 +33,20 @@ class PreInvocationInput(BaseInput):
     """Before every model call, not only before the first call of a user turn."""
 
     hook_event_name: Literal["PreInvocation"] = Field(alias="hookEventName")
-    invocation_num: int = Field(default=0, alias="invocationNum")
+    # 0 at the first model call of a run, which a user prompt, a background
+    # message or a continuing Stop hook starts.
+    invocation_num: int = Field(alias="invocationNum", ge=0)
     # The number of transcript steps before this model call.
-    initial_num_steps: int = Field(default=0, alias="initialNumSteps")
+    initial_num_steps: int = Field(alias="initialNumSteps", ge=0)
+    # The text of the most recent user prompt. A run that a background message
+    # or a Stop hook started repeats the prompt before it.
+    last_user_input: str | None = Field(default=None, alias="lastUserInput")
 
 
 class ToolCall(InputModel):
     id: str
     name: str
-    args: Json
+    args: dict[str, Json]
 
 
 class PreToolUseInput(BaseInput):
@@ -64,7 +66,7 @@ class StopInput(BaseInput):
     hook_event_name: Literal["Stop"] = Field(alias="hookEventName")
     # How many times a Stop hook has kept this turn going. agy 1.5.16 leaves
     # continuationActive false after a Stop hook continued the turn.
-    execution_num: int = Field(default=0, alias="executionNum")
+    execution_num: int = Field(alias="executionNum", ge=0)
     continuation_active: bool = Field(default=False, alias="continuationActive")
 
 

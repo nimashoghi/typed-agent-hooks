@@ -1,9 +1,11 @@
 """Translate shared result intents into strict agy output models.
 
 agy can carry less than Codex and Claude Code. It adds context only at session
-start and before a model call, and its PostToolUse output is empty. A result
-that is valid for an event in the shared table but that agy cannot carry raises
-``SharedOutputError``.
+start and before a model call, it has no way to show a hook's message to the
+user, and it can end a turn early only as an error. A result whose intent agy
+cannot carry raises ``SharedOutputError``. The one exception is the
+``system_message`` of a result whose main intent agy carries: agy leaves it
+out, as the README says.
 """
 
 from typed_agent_hooks import agy
@@ -37,65 +39,34 @@ def _unsupported(event: AnyEvent, output: object, why: str) -> SharedOutputError
     )
 
 
-def _steps(
-    *, context: str | None = None, user_message: str | None = None, error: str | None = None
-) -> list[agy.outputs.InjectStep]:
-    steps = []
-    if error is not None:
-        steps.append(
-            agy.outputs.InjectStep(error_message=agy.outputs.ErrorMessageStep(user_message=error))
-        )
-    if context is not None:
-        steps.append(
-            agy.outputs.InjectStep(
-                system_message=agy.outputs.SystemMessageStep(system_message=context)
-            )
-        )
-    if user_message is not None:
-        # An empty systemMessage sends the model nothing; agy shows the
-        # metadata Markdown to the user.
-        metadata = agy.outputs.SystemMessageMetadata(user_markdown=user_message)
-        step = agy.outputs.SystemMessageStep(system_message="", metadata=metadata)
-        steps.append(agy.outputs.InjectStep(system_message=step))
-    return steps
-
-
-def _inject(
-    event: AnyEvent, output: object, steps: list[agy.outputs.InjectStep]
-) -> agy.outputs.StructuredOutput:
+def _context(event: AnyEvent, output: AddContext) -> agy.outputs.StructuredOutput:
+    step = agy.outputs.InjectStep(
+        system_message=agy.outputs.SystemMessageStep(system_message=output.text)
+    )
     match event.event_name:
         case "SessionStarted":
-            return agy.outputs.SessionStartOutput(inject_steps=steps)
+            return agy.outputs.SessionStartOutput(inject_steps=[step])
         case "PromptSubmitted":
-            return agy.outputs.PreInvocationOutput(inject_steps=steps)
-    raise _unsupported(
-        event, output, "agy adds steps only at session start and before a model call"
-    )
-
-
-def _end_prompt(event: AnyEvent, output: Block | Stop) -> agy.outputs.PreInvocationOutput:
-    # agy has already added the prompt to the conversation. Terminating ends
-    # the turn before the model call and shows the reason to the user only.
-    steps = _steps(error=output.reason, user_message=output.system_message)
-    return agy.outputs.PreInvocationOutput(inject_steps=steps, termination_behavior="terminate")
+            return agy.outputs.PreInvocationOutput(inject_steps=[step])
+    raise _unsupported(event, output, "agy adds context only at session start and before a prompt")
 
 
 def _tool_decision(event: AnyEvent, output: AllowTool | DenyTool) -> agy.outputs.PreToolUseOutput:
     require_event(event, TOOL_DECISION_EVENTS, output)
     if output.context is not None:
         raise _unsupported(event, output, "agy PreToolUse cannot add context")
-    if output.system_message is not None:
-        raise _unsupported(event, output, "agy PreToolUse cannot show a system message")
     if isinstance(output, DenyTool):
         return agy.outputs.PreToolUseOutput(decision="deny", reason=output.reason)
     overwrite = output.updated_input
     if overwrite is not None:
         assert event.event_name == "ToolCallProposed"
-        current = event.tool_input
-        if not isinstance(overwrite, dict) or not isinstance(current, dict):
+        if not isinstance(overwrite, dict):
             raise _unsupported(event, output, "agy rewrites only object tool arguments")
-        # agy merges the overwrite into the arguments, so a removed key would stay.
-        if missing := sorted(set(current) - set(overwrite)):
+        # agy merges the overwrite into the arguments that it sent, so a removed
+        # argument would stay. HookApp gives the handler a copy of the event, so
+        # event.tool_input holds those arguments.
+        assert isinstance(event.tool_input, dict)
+        if missing := sorted(set(event.tool_input) - set(overwrite)):
             raise _unsupported(
                 event, output, f"agy cannot remove tool arguments {', '.join(missing)}"
             )
@@ -108,25 +79,30 @@ def to_agy_output(event: AnyEvent, output: Result) -> agy.outputs.HookResult:
     match output:
         case None:
             return None
-        case SystemMessage(message=message):
+        case SystemMessage():
             require_event(event, MESSAGE_EVENTS, output)
-            return _inject(event, output, _steps(user_message=message))
+            raise _unsupported(event, output, "agy shows no hook message to the user")
         case AddContext():
             require_event(event, CONTEXT_EVENTS, output)
-            steps = _steps(context=output.text, user_message=output.system_message)
-            return _inject(event, output, steps)
+            return _context(event, output)
         case Block():
             require_event(event, BLOCK_EVENTS, output)
             if event.event_name == "PromptSubmitted":
-                return _end_prompt(event, output)
-            if output.system_message is not None:
-                raise _unsupported(event, output, "agy Stop cannot show a system message")
-            return agy.outputs.StopOutput(decision="continue", reason=output.reason)
+                # agy has already added the prompt to the conversation. Ending
+                # the run before the model call shows the reason as an error.
+                error = agy.outputs.ErrorMessageStep(user_message=output.reason)
+                return agy.outputs.PreInvocationOutput(
+                    inject_steps=[agy.outputs.InjectStep(error_message=error)],
+                    termination_behavior="terminate",
+                )
+            if event.event_name == "TurnStopped":
+                return agy.outputs.StopOutput(decision="continue", reason=output.reason)
+            raise AssertionError(f"unhandled block event {event.event_name}")
         case Stop():
             require_event(event, STOP_EVENTS, output)
-            if event.event_name == "PromptSubmitted":
-                return _end_prompt(event, output)
-            raise _unsupported(event, output, "agy shows no reason for a turn that stops")
+            raise _unsupported(
+                event, output, "agy can end a turn early only as an error; use Block"
+            )
         case AllowTool() | DenyTool():
             return _tool_decision(event, output)
         case AllowPermission() | DenyPermission():

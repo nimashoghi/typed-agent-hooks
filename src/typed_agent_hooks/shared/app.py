@@ -75,7 +75,9 @@ class HookApp:
                 tool_events & self.handlers.keys()
             ):
                 return None
-            output = to_agy_output(agy_event, self._call(agy_event))
+            # The handler gets a copy, so that a handler that changes tool_input
+            # cannot hide from the converter the arguments that agy sent.
+            output = to_agy_output(agy_event, self._call(agy_event.model_copy(deep=True)))
         else:
             raise ValueError(f"unknown host {host!r}")
         return None if output is None else render_json(output)
