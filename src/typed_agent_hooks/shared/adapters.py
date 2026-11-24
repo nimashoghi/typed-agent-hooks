@@ -278,12 +278,17 @@ def _answers_user_input(transcript: Path, steps: int) -> bool:
     return last == "USER_INPUT"
 
 
+# agy's terminationReason values for a run that the model finished.
+AGY_FINISHED = frozenset({"NO_TOOL_CALL", "TERMINAL_STEP_TYPE"})
+
+
 def from_agy(event: agy.events.AnyInput) -> AnyEvent | None:
     """Map an agy wire event into its shared semantic event.
 
-    Returns ``None`` for a PreInvocation that does not answer a user prompt:
-    one after the first model call of a run, or the first call of a run that a
-    background message or a Stop hook started.
+    Returns ``None`` for a PreInvocation that does not answer a user prompt
+    (one after the first model call of a run, or the first call of a run that a
+    background message or a Stop hook started), and for a Stop after a run
+    that the model did not finish.
     """
 
     context = EventContext(
@@ -330,6 +335,11 @@ def from_agy(event: agy.events.AnyInput) -> AnyEvent | None:
                 tool_use_id=event.tool_call.id,
             )
         case agy.events.StopInput():
+            # Claude Code and Codex stop a turn for their Stop hook only when the
+            # model finished; a Stop hook must not continue a turn that the user
+            # cancelled, that failed, or that a hook ended (a refused prompt).
+            if event.termination_reason not in AGY_FINISHED:
+                return None
             return TurnStopped(
                 context=context,
                 stop_hook_active=event.continuation_active or event.execution_num > 0,

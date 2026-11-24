@@ -9,13 +9,13 @@ Added:
 Changed:
 
 - `core.Host`, `core.HOSTS` and `EventContext.host` include `"agy"`. Code that handles every host must handle it.
-- In agy, `app.handle` returns `None` without running a handler for a `PreInvocation` that does not answer a user prompt, and for a `PostToolUse` of the kind (completed or failed call) that a hook does not handle when it handles the other kind. A hook that handles neither still fails with "no handler".
+- In agy, `app.handle` returns `None` without running a handler for a `Stop` after a run that the model did not finish, for a `PreInvocation` that does not answer a user prompt, and for a `PostToolUse` of the kind (completed or failed call) that a hook does not handle when it handles the other kind. A hook that handles neither still fails with "no handler".
 - In agy, a handler gets a copy of the event, so that a tool rewrite is checked against the arguments that agy sent.
 - In agy, the `system_message` of `AddContext`, `Block`, `AllowTool` and `DenyTool` is left out, because agy shows no informational hook message to the user. `app.notes` names each field that the last `handle()` left out; `main()` does not report them.
 
 Fixed:
 
-- `core.render_json` refuses NaN and infinite numbers, which are not JSON, in every host. Before, a result that held one rendered invalid JSON.
+- `core.render_json` refuses NaN and infinite numbers, which are not JSON, and text that is not valid UTF-8 (a lone surrogate), in every host. Before, such a result rendered invalid JSON, or `main()` failed to write it.
 
 ## 0.3.0
 

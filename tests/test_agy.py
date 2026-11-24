@@ -539,3 +539,39 @@ def test_a_failed_call_leaves_no_notes_of_a_call_inside_it() -> None:
     with pytest.raises(SharedOutputError):
         app.handle("agy", _payload("PreToolUse"))
     assert app.notes == []
+
+
+@pytest.mark.parametrize(
+    "reason", ["TERMINAL_CUSTOM_HOOK", "USER_CANCELED", "ERROR", "MAX_INVOCATIONS"]
+)
+def test_a_run_that_the_model_did_not_finish_runs_no_stop_handler(reason: str) -> None:
+    # A Stop handler must not continue a turn that a hook refused or the user ended.
+    assert _event("Stop", terminationReason=reason) is None
+    assert isinstance(
+        _event("Stop", terminationReason="TERMINAL_STEP_TYPE"), shared.events.TurnStopped
+    )
+
+
+def test_an_output_that_is_not_utf8_fails_with_no_notes() -> None:
+    app = shared.HookApp(name="surrogate")
+
+    @app.on(shared.events.SessionStarted)
+    def started(_event: shared.events.SessionStarted) -> shared.outputs.Result:
+        return shared.outputs.AddContext(text="file \udcff", system_message="Shown.")
+
+    with pytest.raises(UnicodeEncodeError):
+        app.handle("agy", _payload("SessionStart"))
+    assert app.notes == []
+
+
+def test_an_allowed_call_notes_its_omitted_message() -> None:
+    event = _event("PreToolUse")
+    assert event is not None
+
+    output, notes = to_agy_output(event, shared.outputs.AllowTool(system_message="Shown."))
+
+    assert json.loads(render_json(cast(Any, output))) == {"decision": "allow"}
+    assert notes == [
+        "agy left out the system_message of AllowTool on ToolCallProposed: "
+        "agy shows no informational hook message to the user"
+    ]

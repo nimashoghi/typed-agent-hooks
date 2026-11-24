@@ -68,6 +68,9 @@ class StopInput(BaseInput):
     # continuationActive false after a Stop hook continued the turn.
     execution_num: int = Field(alias="executionNum", ge=0)
     continuation_active: bool = Field(default=False, alias="continuationActive")
+    # Why the run ended: NO_TOOL_CALL when the model finished, otherwise a
+    # cancel, an error, a limit, or a hook that ended the run.
+    termination_reason: str = Field(alias="terminationReason")
 
 
 AnyInput: TypeAlias = (
