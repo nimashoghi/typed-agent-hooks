@@ -273,7 +273,7 @@ def _answers_user_input(transcript: Path, steps: int) -> bool:
                 raise ValueError(f"{transcript} line {count}: {error}") from error
             kind = step.get("type") if isinstance(step, dict) else None
             if not isinstance(kind, str):
-                raise ValueError(f"{transcript} has a step without a type")
+                raise ValueError(f"{transcript} line {count}: a step without a type")
             if kind != "SYSTEM_MESSAGE":
                 last = kind
     if count < steps:

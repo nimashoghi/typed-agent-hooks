@@ -1,9 +1,8 @@
 """Shared primitives for strict hook schemas and rendering."""
 
 import json
-import math
 from collections.abc import Mapping
-from typing import Any, Literal, TypeAlias, cast
+from typing import Literal, TypeAlias, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.types import JsonValue
@@ -35,6 +34,10 @@ class InputModel(BaseModel):
         extra="ignore",
         strict=True,
         frozen=True,
+        # A number that a model reads must be finite (JSON has no other), also
+        # in a model instance that an in-process caller passes inside a mapping.
+        allow_inf_nan=False,
+        revalidate_instances="always",
         # A hook run builds only the schemas that it uses, not all at import.
         defer_build=True,
     )
@@ -76,56 +79,16 @@ def _reject_constant(name: str) -> object:
     raise ValueError(f"{name} is not JSON")
 
 
-def _finite_float(text: str) -> float:
-    # A valid JSON number such as 1e400 overflows to infinity.
-    if not math.isfinite(value := float(text)):
-        raise ValueError(f"{text} is not a finite number")
-    return value
-
-
 def loads_json(text: str | bytes) -> object:
-    """Decode JSON text whose every number is finite.
-
-    Python's decoder accepts NaN and Infinity, which are not JSON, and turns a
-    number too large for a float into infinity.
+    """Decode JSON text, refusing NaN and Infinity, which Python's decoder
+    accepts but which are not JSON.
 
     Raises:
         ValueError: If the text is malformed (json.JSONDecodeError) or holds
-            such a number.
+            NaN or Infinity.
     """
 
-    return json.loads(text, parse_constant=_reject_constant, parse_float=_finite_float)
-
-
-def _snapshot(value: object) -> object:
-    """Copy a payload, reading each value once, with dicts for mappings and lists
-    for lists and tuples; raise for a float that is not finite.
-
-    Iterative, so that deep nesting raises no RecursionError. The handler gets
-    the copy, so a mapping that changes between reads cannot change what was
-    checked.
-    """
-
-    root: list[object] = [value]
-    pending: list[tuple[Any, Any]] = [(root, 0)]
-    copies: dict[int, tuple[object, object]] = {}  # the original keeps its id unique
-    while pending:
-        parent, key = pending.pop()
-        item = parent[key]
-        if isinstance(item, float) and not math.isfinite(item):
-            raise ValueError(f"{item} is not a finite number")
-        if not isinstance(item, Mapping | list | tuple):
-            continue
-        if (known := copies.get(id(item))) is not None:
-            parent[key] = known[1]
-            continue
-        copy: Any = dict(item) if isinstance(item, Mapping) else list(item)
-        copies[id(item)] = (item, copy)
-        parent[key] = copy
-        pending.extend(
-            (copy, index) for index in (copy if isinstance(copy, dict) else range(len(copy)))
-        )
-    return root[0]
+    return json.loads(text, parse_constant=_reject_constant)
 
 
 def parse_json_object(data: JsonInput) -> dict[str, object]:
@@ -139,11 +102,11 @@ def parse_json_object(data: JsonInput) -> dict[str, object]:
 
     Raises:
         TypeError: If the decoded value is not a JSON object.
-        ValueError: If JSON text is malformed (json.JSONDecodeError), or the
-            payload holds a number that is not finite.
+        ValueError: If JSON text is malformed (json.JSONDecodeError) or holds
+            NaN or Infinity, which are not JSON.
     """
 
-    decoded = loads_json(data) if isinstance(data, (str, bytes)) else _snapshot(data)
+    decoded: object = loads_json(data) if isinstance(data, (str, bytes)) else dict(data)
     if not isinstance(decoded, dict):
         raise TypeError("hook payload must be a JSON object")
     return cast(dict[str, object], decoded)

@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+from collections import UserDict
 from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any, cast
@@ -11,7 +12,7 @@ from typing import Any, cast
 import pytest
 from pydantic import ValidationError
 
-from typed_agent_hooks import agy, shared
+from typed_agent_hooks import agy, claude_code, codex, shared
 from typed_agent_hooks.core import parse_json_object, render_json
 from typed_agent_hooks.shared.adapters import from_agy
 from typed_agent_hooks.shared.agy_outputs import to_agy_output
@@ -170,9 +171,9 @@ def test_a_step_after_the_prefix_is_not_read(tmp_path: Path) -> None:
 
 def test_a_transcript_step_without_a_type_raises(tmp_path: Path) -> None:
     path = tmp_path / "transcript_full.jsonl"
-    path.write_text('{}\n{"type": "USER_INPUT"}\n{"type": "PLANNER_RESPONSE"}\n')
+    path.write_text('{"type": "USER_INPUT"}\n{}\n{"type": "PLANNER_RESPONSE"}\n')
 
-    with pytest.raises(ValueError, match="without a type"):
+    with pytest.raises(ValueError, match="line 2: a step without a type"):
         _event("PreInvocation", transcriptPath=str(path), initialNumSteps=2)
 
 
@@ -626,37 +627,52 @@ def test_numbers_that_json_lacks_never_reach_a_handler(tmp_path: Path) -> None:
         return shared.outputs.Block(reason="No.")
 
     text = json.dumps(_payload("PreToolUse"))
-    for number in ("Infinity", "-Infinity", "NaN", "1e400", "-1e400"):
-        with pytest.raises(ValueError, match="not JSON|not a finite number"):
+    for number in ("Infinity", "-Infinity", "NaN"):
+        with pytest.raises(ValueError, match=f"{number.lstrip('-')} is not JSON"):
+            app.handle(
+                "agy", text.replace('"WaitMsBeforeAsync": 5000', f'"WaitMsBeforeAsync": {number}')
+            )
+    # Valid JSON that overflows a float, in a field that a model reads.
+    for number in ("1e400", "-1e400"):
+        with pytest.raises(ValidationError, match="finite number"):
             app.handle(
                 "agy", text.replace('"WaitMsBeforeAsync": 5000', f'"WaitMsBeforeAsync": {number}')
             )
     args = {"CommandLine": "x", "WaitMsBeforeAsync": float("inf")}
     mapping = _payload("PreToolUse", toolCall={"id": "c", "name": "run_command", "args": args})
-    with pytest.raises(ValueError, match="not a finite number"):
+    with pytest.raises(ValidationError, match="finite number"):
         app.handle("agy", mapping)
+    # A model instance inside a mapping is validated again.
+    instance = agy.events.ToolCall.model_construct(id="c", name="run_command", args=args)
+    with pytest.raises(ValidationError, match="finite number"):
+        app.handle("agy", _payload("PreToolUse", toolCall=instance))
     transcript = tmp_path / "transcript_full.jsonl"
-    for number in ("NaN", "1e400"):
-        # The error names the line, not the payload.
-        transcript.write_text(
-            f'{{"type": "PLANNER_RESPONSE", "x": {number}}}\n{{"type": "USER_INPUT"}}\n'
+    # The error names the line, not the payload.
+    transcript.write_text('{"type": "PLANNER_RESPONSE", "x": NaN}\n{"type": "USER_INPUT"}\n')
+    with pytest.raises(ValueError, match="transcript_full.jsonl line 1: NaN is not JSON"):
+        app.handle(
+            "agy", _payload("PreInvocation", transcriptPath=str(transcript), initialNumSteps=2)
         )
-        with pytest.raises(ValueError, match=f"transcript_full.jsonl line 1: {number} is not"):
-            app.handle(
-                "agy", _payload("PreInvocation", transcriptPath=str(transcript), initialNumSteps=2)
-            )
     assert ran == []
 
 
-def test_deeply_nested_finite_mappings_are_accepted() -> None:
+def test_an_overflowing_number_in_an_ignored_field_is_ignored(tmp_path: Path) -> None:
+    text = json.dumps(_payload("PreToolUse", futureMetric=1.0)).replace("1.0", "1e400")
+    assert isinstance(from_agy(agy.parse_input(text)), shared.events.ToolCallProposed)
+    transcript = tmp_path / "transcript_full.jsonl"
+    transcript.write_text('{"type": "USER_INPUT", "x": 1e400}\n')
+    assert isinstance(
+        _event("PreInvocation", transcriptPath=str(transcript), initialNumSteps=1),
+        shared.events.PromptSubmitted,
+    )
+
+
+def test_a_deeply_nested_ignored_field_is_ignored() -> None:
     nested: object = 1.5
     for _ in range(5000):
         nested = [nested]
-    copied = parse_json_object({"ignored": nested})["ignored"]
-    for _ in range(5000):
-        assert isinstance(copied, list) and len(copied) == 1
-        copied = copied[0]
-    assert copied == 1.5
+    assert parse_json_object({"ignored": nested})["ignored"] is nested
+    assert isinstance(_event("SessionStart", ignored=nested), shared.events.SessionStarted)
 
 
 def test_a_rewrite_replaces_whole_top_level_arguments() -> None:
@@ -703,7 +719,7 @@ class _ReadCountingMapping(Mapping[str, object]):
         return len(self.payload)
 
 
-def test_a_mapping_payload_is_read_once_and_checked_as_read() -> None:
+def test_a_mapping_payload_is_read_once_and_validated_as_read() -> None:
     app = shared.HookApp(name="once")
     seen: list[object] = []
 
@@ -719,3 +735,20 @@ def test_a_mapping_payload_is_read_once_and_checked_as_read() -> None:
     app.handle("agy", payload)
     assert seen == [args]
     assert set(payload.reads.values()) == {1}
+
+
+@pytest.mark.parametrize(
+    ("parser", "fixture"),
+    [
+        (codex.parse_input, "codex_inputs.json"),
+        (claude_code.parse_input, "claude_code_inputs.json"),
+    ],
+)
+def test_other_hosts_keep_strict_nested_fields_and_refuse_infinity(
+    parser: Any, fixture: str
+) -> None:
+    payloads = json.loads((FIXTURES / fixture).read_text(encoding="utf-8"))
+    payload = next(item for item in payloads if item["hook_event_name"] == "PreToolUse")
+    for value in (("a", "b"), UserDict({"a": 1}), float("inf")):
+        with pytest.raises(ValidationError):
+            parser({**payload, "tool_input": {"args": value}})
