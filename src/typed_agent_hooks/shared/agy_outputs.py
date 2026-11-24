@@ -11,6 +11,7 @@ is left out, and the converter returns a note that says so, which
 
 from typed_agent_hooks import agy
 
+from .adapters import native_event_name
 from .events import AnyEvent
 from .outputs import (
     BLOCK_EVENTS,
@@ -94,6 +95,8 @@ def to_agy_output(event: AnyEvent, output: Result) -> Converted:
     """Convert a shared result into a strict agy output model, with a note for
     each field that agy leaves out."""
 
+    if output is not None and native_event_name(type(event), "agy") is None:
+        raise SharedOutputError(f"agy has no {event.event_name} event")
     match output:
         case None:
             return None, []

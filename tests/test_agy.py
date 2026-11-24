@@ -14,7 +14,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from typed_agent_hooks import agy, claude_code, codex, shared
 from typed_agent_hooks.core import parse_json_object, render_json
-from typed_agent_hooks.shared.adapters import from_agy
+from typed_agent_hooks.shared.adapters import from_agy, from_claude_code
 from typed_agent_hooks.shared.agy_outputs import to_agy_output
 from typed_agent_hooks.shared.outputs import SharedOutputError
 
@@ -479,12 +479,8 @@ def test_in_process_callers_read_the_notes_of_the_last_call() -> None:
     calls = iter(["Not here.", "\ud800"])
 
     @app.on(shared.events.ToolCallProposed)
-    def proposed(event: shared.events.ToolCallProposed) -> shared.outputs.Result:
-        if isinstance(reason := next(calls), str):
-            return shared.outputs.DenyTool(reason=reason, system_message="Ask first.")
-        assert isinstance(event.tool_input, dict)
-        rewrite = {**event.tool_input, "WaitMsBeforeAsync": reason}
-        return shared.outputs.AllowTool(updated_input=rewrite, system_message="x")
+    def proposed(_event: shared.events.ToolCallProposed) -> shared.outputs.Result:
+        return shared.outputs.DenyTool(reason=next(calls), system_message="Ask first.")
 
     assert app.handle("agy", _payload("PreToolUse")) == '{"decision":"deny","reason":"Not here."}'
     assert app.notes == [
@@ -798,3 +794,23 @@ def test_a_parsed_agy_event_validates_again_as_an_instance() -> None:
     for payload in payloads:
         event = agy.parse_input(payload)
         assert type(event).model_validate(event) == event
+
+
+def test_a_result_with_a_number_that_is_not_finite_fails_when_built() -> None:
+    with pytest.raises(ValidationError, match="nan is not a finite number"):
+        shared.outputs.AllowTool(updated_input={"x": [float("nan")]})
+    with pytest.raises(ValidationError, match="inf is not a finite number"):
+        shared.outputs.AllowTool.model_validate_json('{"updated_input": {"x": 1e400}}')
+
+
+def test_events_that_agy_never_sends_raise_a_shared_output_error() -> None:
+    claude = json.loads((FIXTURES / "claude_code_inputs.json").read_text(encoding="utf-8"))
+    payloads = {item["hook_event_name"]: item for item in claude}
+    permission = from_claude_code(claude_code.parse_input(payloads["PermissionRequest"]))
+    subagent = from_claude_code(claude_code.parse_input(payloads["SubagentStop"]))
+    for event, output in (
+        (permission, shared.outputs.AllowPermission()),
+        (subagent, shared.outputs.Block(reason="Not yet.")),
+    ):
+        with pytest.raises(SharedOutputError, match=f"agy has no {event.event_name} event"):
+            to_agy_output(event, output)
