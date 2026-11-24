@@ -11,7 +11,7 @@ Changed:
 - `core.Host`, `core.HOSTS` and `EventContext.host` include `"agy"`. Code that handles every host must handle it.
 - In agy, `app.handle` returns `None` without running a handler for a `PreInvocation` that does not answer a user prompt, and for a `PostToolUse` of the kind (completed or failed call) that a hook does not handle when it handles the other kind. A hook that handles neither still fails with "no handler".
 - In agy, a handler gets a copy of the event, so that a tool rewrite is checked against the arguments that agy sent.
-- `shared.outputs.SharedOutputWarning`: warned when a host carries a result's main intent but leaves out a field. agy leaves out `system_message`, because it cannot show a hook's message to the user.
+- In agy, the `system_message` of `AddContext`, `Block`, `AllowTool` and `DenyTool` is left out, because agy shows no informational hook message to the user; `main()` writes a line on stderr that says so, after the output.
 
 Fixed:
 

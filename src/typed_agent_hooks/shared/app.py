@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
-import warnings
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, TypeVar, cast
@@ -17,7 +17,7 @@ from .agy_outputs import to_agy_output
 from .claude_code_outputs import to_claude_code_output
 from .codex_outputs import to_codex_output
 from .events import EVENT_TYPES, AnyEvent, BaseEvent, ToolCallCompleted, ToolCallFailed
-from .outputs import Result, SharedOutputWarning
+from .outputs import Result
 
 EventT = TypeVar("EventT", bound=BaseEvent)
 Handler = Callable[[EventT], Result]
@@ -60,6 +60,13 @@ class HookApp:
         every other failure, including an event that has no handler.
         """
 
+        return self._dispatch(host, payload)[0]
+
+    def _dispatch(self, host: Host, payload: JsonInput) -> tuple[str | None, list[str]]:
+        """handle(), with a note for each field of the result that the host
+        leaves out. A note exists only for an output that rendered."""
+
+        notes: list[str] = []
         if host == "codex":
             event = from_codex(codex.parse_input(payload))
             output = to_codex_output(event, self._call(event))
@@ -68,20 +75,23 @@ class HookApp:
             output = to_claude_code_output(event, self._call(event))
         elif host == "agy":
             if (agy_event := from_agy(agy.parse_input(payload))) is None:
-                return None
+                return None, []
             # agy sends completed and failed tool calls as one event, PostToolUse.
             # A hook registered there for one kind also gets the other.
             tool_events = {ToolCallCompleted, ToolCallFailed}
             if type(agy_event) in tool_events - self.handlers.keys() and (
                 tool_events & self.handlers.keys()
             ):
-                return None
+                return None, []
             # The handler gets a copy, so that a handler that changes tool_input
             # cannot hide from the converter the arguments that agy sent.
-            output = to_agy_output(agy_event, self._call(agy_event.model_copy(deep=True)))
+            result = self._call(agy_event.model_copy(deep=True))
+            output, notes = to_agy_output(agy_event, result)
         else:
             raise ValueError(f"unknown host {host!r}")
-        return None if output is None else render_json(output)
+        if output is None:
+            return None, []
+        return render_json(output), notes
 
     def _call(self, event: AnyEvent) -> Result:
         handler = self.handlers.get(type(event))
@@ -117,18 +127,16 @@ class HookApp:
             # a print at import, then goes to stderr.
             with os.fdopen(os.dup(1), "wb") as host_stdout:
                 os.dup2(2, 1)
-                # A field that the host leaves out is reported, and never stops
-                # the output, also when Python turns warnings into errors.
-                with warnings.catch_warnings(record=True) as omitted:
-                    warnings.simplefilter("always", SharedOutputWarning)
-                    output = self.handle(host, sys.stdin.buffer.read())
-                for warning in omitted:
-                    message = f"{warning.category.__name__}: {warning.message}"
-                    print(f"{self.name}: {message}", file=sys.stderr)
+                output, notes = self._dispatch(host, sys.stdin.buffer.read())
                 if output is not None:
                     # The hosts read hook stdout as UTF-8, whatever the locale.
                     host_stdout.write(output.encode() + b"\n")
                     host_stdout.flush()
+            # After the output, and never at its cost: a note is information.
+            # Unbuffered, so that a closed stderr leaves nothing to fail at exit.
+            for note in notes:
+                with contextlib.suppress(OSError):
+                    os.write(2, f"{self.name}: {note}\n".encode())
         # A handler's exit code must not reach the host: exit 2 blocks the action.
         except (Exception, SystemExit) as error:
             detail = " ".join(str(error).split())

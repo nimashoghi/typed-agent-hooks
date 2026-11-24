@@ -1,14 +1,13 @@
 """Translate shared result intents into strict agy output models.
 
 agy can carry less than Codex and Claude Code. It adds context only at session
-start and before a model call, it has no way to show a hook's message to the
+start and before a model call, it shows no informational hook message to the
 user, and it can end a turn early only as an error. A result whose intent agy
 cannot carry raises ``SharedOutputError``. The one exception is the
-``system_message`` of a result whose main intent agy carries: it is left out
-with a ``SharedOutputWarning``, as the README says.
+informational ``system_message`` of a result whose main intent agy carries: it
+is left out, and the converter returns a note that says so, which ``main()``
+writes to stderr after the output.
 """
-
-import warnings
 
 from typed_agent_hooks import agy
 
@@ -28,11 +27,12 @@ from .outputs import (
     DenyTool,
     Result,
     SharedOutputError,
-    SharedOutputWarning,
     Stop,
     SystemMessage,
     require_event,
 )
+
+Converted = tuple[agy.outputs.HookResult, list[str]]
 
 
 def _unsupported(event: AnyEvent, output: object, why: str) -> SharedOutputError:
@@ -42,41 +42,35 @@ def _unsupported(event: AnyEvent, output: object, why: str) -> SharedOutputError
     )
 
 
-def _omit_message(event: AnyEvent, output: AddContext | Block | AllowTool | DenyTool) -> None:
-    """Warn that agy leaves out the system_message; call it once the output is built."""
-    if output.system_message is not None:
-        warnings.warn(
-            f"agy shows no hook message to the user: left out the system_message of "
-            f"{type(output).__name__} on {event.event_name}",
-            SharedOutputWarning,
-            stacklevel=2,
-        )
+def _omitted(event: AnyEvent, output: AddContext | Block | AllowTool | DenyTool) -> list[str]:
+    """The note for a system_message that agy cannot show, if the result has one."""
+    if output.system_message is None:
+        return []
+    return [
+        f"agy left out the system_message of {type(output).__name__} on {event.event_name}: "
+        "agy shows no informational hook message to the user"
+    ]
 
 
-def _context(event: AnyEvent, output: AddContext) -> agy.outputs.StructuredOutput:
+def _context(event: AnyEvent, output: AddContext) -> Converted:
     step = agy.outputs.SystemMessageItem(
         system_message=agy.outputs.SystemMessageStep(system_message=output.text)
     )
     match event.event_name:
         case "SessionStarted":
-            started = agy.outputs.SessionStartOutput(inject_steps=[step])
-            _omit_message(event, output)
-            return started
+            return agy.outputs.SessionStartOutput(inject_steps=[step]), _omitted(event, output)
         case "PromptSubmitted":
-            invoked = agy.outputs.PreInvocationOutput(inject_steps=[step])
-            _omit_message(event, output)
-            return invoked
+            return agy.outputs.PreInvocationOutput(inject_steps=[step]), _omitted(event, output)
     raise _unsupported(event, output, "agy adds context only at session start and before a prompt")
 
 
-def _tool_decision(event: AnyEvent, output: AllowTool | DenyTool) -> agy.outputs.PreToolUseOutput:
+def _tool_decision(event: AnyEvent, output: AllowTool | DenyTool) -> Converted:
     require_event(event, TOOL_DECISION_EVENTS, output)
     if output.context is not None:
         raise _unsupported(event, output, "agy PreToolUse cannot add context")
     if isinstance(output, DenyTool):
         denied = agy.outputs.PreToolUseOutput(decision="deny", reason=output.reason)
-        _omit_message(event, output)
-        return denied
+        return denied, _omitted(event, output)
     overwrite = output.updated_input
     if overwrite is not None:
         assert event.event_name == "ToolCallProposed"
@@ -93,19 +87,19 @@ def _tool_decision(event: AnyEvent, output: AllowTool | DenyTool) -> agy.outputs
     allowed = agy.outputs.PreToolUseOutput(
         decision="allow", reason=output.reason, overwrite=overwrite
     )
-    _omit_message(event, output)
-    return allowed
+    return allowed, _omitted(event, output)
 
 
-def to_agy_output(event: AnyEvent, output: Result) -> agy.outputs.HookResult:
-    """Convert a shared result into a strict agy output model."""
+def to_agy_output(event: AnyEvent, output: Result) -> Converted:
+    """Convert a shared result into a strict agy output model, with a note for
+    each field that agy leaves out."""
 
     match output:
         case None:
-            return None
+            return None, []
         case SystemMessage():
             require_event(event, MESSAGE_EVENTS, output)
-            raise _unsupported(event, output, "agy shows no hook message to the user")
+            raise _unsupported(event, output, "agy shows no informational hook message to the user")
         case AddContext():
             require_event(event, CONTEXT_EVENTS, output)
             return _context(event, output)
@@ -121,12 +115,10 @@ def to_agy_output(event: AnyEvent, output: Result) -> agy.outputs.HookResult:
                     inject_steps=[agy.outputs.ErrorMessageItem(error_message=error)],
                     termination_behavior="terminate",
                 )
-                _omit_message(event, output)
-                return refused
+                return refused, _omitted(event, output)
             if event.event_name == "TurnStopped":
                 continued = agy.outputs.StopOutput(decision="continue", reason=output.reason)
-                _omit_message(event, output)
-                return continued
+                return continued, _omitted(event, output)
             raise AssertionError(f"unhandled block event {event.event_name}")
         case Stop():
             require_event(event, STOP_EVENTS, output)

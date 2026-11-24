@@ -11,10 +11,6 @@ class SharedOutputError(ValueError):
     """Raised when an output intent is not portable for an event and host."""
 
 
-class SharedOutputWarning(UserWarning):
-    """Warned when a host carries a result's main intent but not all of its fields."""
-
-
 class SystemMessage(StrictModel):
     """Show a host system message without changing control flow."""
 

@@ -4,7 +4,6 @@ import json
 import os
 import subprocess
 import sys
-import warnings
 from pathlib import Path
 from typing import Any, cast
 
@@ -15,7 +14,7 @@ from typed_agent_hooks import agy, shared
 from typed_agent_hooks.core import render_json
 from typed_agent_hooks.shared.adapters import from_agy
 from typed_agent_hooks.shared.agy_outputs import to_agy_output
-from typed_agent_hooks.shared.outputs import SharedOutputError, SharedOutputWarning
+from typed_agent_hooks.shared.outputs import SharedOutputError
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -236,7 +235,7 @@ def test_results_render_the_agy_wire(
     event = _prompt(tmp_path) if event_name == "PreInvocation" else _event(event_name)
     assert event is not None
 
-    output = to_agy_output(event, cast(Any, result))
+    output, _notes = to_agy_output(event, cast(Any, result))
 
     assert json.loads(render_json(cast(Any, output))) == rendered
 
@@ -277,16 +276,19 @@ def test_results_that_agy_cannot_carry_raise(
         ("PreToolUse", shared.outputs.DenyTool(reason="No.", system_message="Shown.")),
     ],
 )
-def test_a_system_message_that_agy_cannot_show_is_left_out_with_a_warning(
+def test_a_system_message_that_agy_cannot_show_is_left_out_with_a_note(
     tmp_path: Path, event_name: str, result: object
 ) -> None:
     event = _prompt(tmp_path) if event_name == "PreInvocation" else _event(event_name)
     assert event is not None
 
-    with pytest.warns(SharedOutputWarning, match="left out the system_message"):
-        output = to_agy_output(event, cast(Any, result))
+    output, notes = to_agy_output(event, cast(Any, result))
 
     assert "Shown." not in render_json(cast(Any, output))
+    assert notes == [
+        f"agy left out the system_message of {type(result).__name__} on {event.event_name}: "
+        "agy shows no informational hook message to the user"
+    ]
 
 
 @pytest.mark.parametrize(
@@ -414,16 +416,17 @@ def test_main_runs_a_hook_for_agy(
     assert (result.returncode, result.stdout, result.stderr) == (0, stdout, "")
 
 
-def test_a_failed_rewrite_warns_about_nothing() -> None:
-    event = _event("PreToolUse")
-    assert event is not None
+def test_an_output_that_does_not_render_gets_no_note() -> None:
+    app = shared.HookApp(name="rewrite")
 
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        with pytest.raises(SharedOutputError, match="cannot remove tool arguments"):
-            to_agy_output(event, shared.outputs.AllowTool(updated_input={}, system_message="x"))
+    @app.on(shared.events.ToolCallProposed)
+    def proposed(event: shared.events.ToolCallProposed) -> shared.outputs.Result:
+        assert isinstance(event.tool_input, dict)
+        rewrite = {**event.tool_input, "WaitMsBeforeAsync": [float("nan")]}
+        return shared.outputs.AllowTool(updated_input=rewrite, system_message="x")
 
-    assert not caught
+    with pytest.raises(ValueError, match="JSON compliant"):
+        app._dispatch("agy", _payload("PreToolUse"))
 
 
 DENY_HOOK = """\
@@ -460,6 +463,29 @@ def test_an_omitted_message_never_stops_the_decision(tmp_path: Path) -> None:
     assert result.returncode == 0
     assert json.loads(result.stdout) == {"decision": "deny", "reason": "Not here."}
     assert result.stderr == (
-        "deny: SharedOutputWarning: agy shows no hook message to the user: "
-        "left out the system_message of DenyTool on ToolCallProposed\n"
+        "deny: agy left out the system_message of DenyTool on ToolCallProposed: "
+        "agy shows no informational hook message to the user\n"
     )
+
+
+def test_a_closed_stderr_never_stops_the_decision(tmp_path: Path) -> None:
+    hook = tmp_path / "deny.py"
+    hook.write_text(DENY_HOOK, encoding="utf-8")
+    env = {key: value for key, value in os.environ.items() if key != "PYTHONUNBUFFERED"}
+    read, write = os.pipe()
+    os.close(read)  # nobody reads the hook's stderr
+    try:
+        result = subprocess.run(
+            [sys.executable, str(hook), "agy"],
+            input=json.dumps(_payload("PreToolUse")),
+            stdout=subprocess.PIPE,
+            stderr=write,
+            text=True,
+            timeout=30,
+            env=env,
+        )
+    finally:
+        os.close(write)
+
+    assert result.returncode == 0
+    assert json.loads(result.stdout) == {"decision": "deny", "reason": "Not here."}

@@ -169,7 +169,7 @@ agy fires different events from the other two hosts, and its outputs carry less.
 - `PostToolUse` carries both `ToolCallCompleted` and `ToolCallFailed` (when agy reports an `error`). A hook that handles only one of them writes nothing for the other. `tool_response` is `None`: agy gives hooks no tool output.
 - agy sends no permission mode, turn ID or last assistant message.
 - agy leaves `continuationActive` false after a Stop hook continued the turn, so `TurnStopped.stop_hook_active` also reads `executionNum`, the number of continuations in the turn.
-- agy has no way to show a hook's message to the user: its terminal does not show a system message whose `metadata.user_markdown` is set, and the model then does not get the step either. So for agy the package carries the main intent of `AddContext`, `Block`, `AllowTool` and `DenyTool`, leaves out their `system_message` and warns with `SharedOutputWarning`, which `main()` writes to stderr.
+- agy shows no informational hook message to the user: its terminal does not show a system message whose `metadata.user_markdown` is set, and the model then does not get the step either. (A `Block` reason is shown, as an error.) So for agy the package carries the main intent of `AddContext`, `Block`, `AllowTool` and `DenyTool` and leaves out their `system_message`; `main()` then writes one line on stderr after the output that names the field.
 
 Results that agy can carry:
 
@@ -182,7 +182,7 @@ Results that agy can carry:
 | `AllowTool` | `ToolCallProposed` | agy's `allow` decision, with `updated_input` as `overwrite`. agy merges it into the arguments that it sent, so it must keep every argument. Whether agy still asks for permission depends on its permission settings. |
 | `DenyTool` | `ToolCallProposed` | |
 
-Every other result raises `SharedOutputError` for agy: `SystemMessage` (agy shows no hook message to the user), `Stop` on `PromptSubmitted` (agy ends a turn early only as an error; use `Block` to refuse the prompt), `Stop` on `TurnStopped` (agy shows no reason for a stop; return `None` to let the turn stop), and context on a tool event or a tool decision.
+Every other result raises `SharedOutputError` for agy: `SystemMessage` (agy shows no informational hook message to the user), `Stop` on `PromptSubmitted` (agy ends a turn early only as an error; use `Block` to refuse the prompt), `Stop` on `TurnStopped` (agy shows no reason for a stop; return `None` to let the turn stop), and context on a tool event or a tool decision.
 
 ## Host wire schemas
 
