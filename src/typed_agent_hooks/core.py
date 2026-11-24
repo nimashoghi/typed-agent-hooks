@@ -39,9 +39,9 @@ class InputModel(BaseModel):
     )
 
 
-Host: TypeAlias = Literal["codex", "claude"]
-"""A hook host, named as the first argument of a hook command."""
-HOSTS: tuple[Host, ...] = ("codex", "claude")
+Host: TypeAlias = Literal["codex", "claude", "agy"]
+"""A hook host, named as the first argument of a hook command. ``agy`` is the Antigravity CLI."""
+HOSTS: tuple[Host, ...] = ("codex", "claude", "agy")
 
 Json: TypeAlias = JsonValue
 JsonInput: TypeAlias = str | bytes | Mapping[str, object]

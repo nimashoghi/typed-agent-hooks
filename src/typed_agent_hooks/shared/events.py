@@ -1,4 +1,4 @@
-"""Host-independent semantic events shared by Codex and Claude Code."""
+"""Host-independent semantic events shared by Codex, Claude Code and agy."""
 
 from typing import Literal, TypeAlias, get_args
 
@@ -77,6 +77,11 @@ class PermissionRequested(BaseEvent):
 
 
 class ToolCallCompleted(BaseEvent):
+    """A tool call that finished.
+
+    ``tool_response`` is ``None`` in agy, which gives hooks no tool output.
+    """
+
     event_name: Literal["ToolCallCompleted"] = "ToolCallCompleted"
     turn_id: str | None = None
     tool_name: str
@@ -89,8 +94,9 @@ class ToolCallCompleted(BaseEvent):
 class ToolCallFailed(BaseEvent):
     """A tool call that ended in failure rather than a result.
 
-    Claude Code only: it routes a failing call to `PostToolUseFailure` instead
-    of `PostToolUse`. Codex never emits this event. It sends a shell command
+    Claude Code routes a failing call to `PostToolUseFailure` instead of
+    `PostToolUse`. agy sends it as `PostToolUse` with an `error`. Codex
+    never emits this event. It sends a shell command
     that exits non-zero as an ordinary `ToolCallCompleted` (the exit code is in
     the output), and it sends no hook for some other failures, such as an MCP
     tool error.
@@ -138,6 +144,8 @@ class SubagentStopped(BaseEvent):
 
 
 class TurnStopped(BaseEvent):
+    """The end of a turn. agy does not send the last assistant message."""
+
     event_name: Literal["TurnStopped"] = "TurnStopped"
     turn_id: str | None = None
     stop_hook_active: bool

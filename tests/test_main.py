@@ -1,4 +1,4 @@
-"""Run a hook file as the hosts do: ``HOOK_FILE codex|claude`` with the payload on stdin."""
+"""Run a hook file as the hosts do: ``HOOK_FILE codex|claude|agy`` with the payload on stdin."""
 
 import json
 import os
@@ -224,7 +224,7 @@ def test_bad_host_argument_is_a_usage_error(hook: Path, args: tuple[str, ...]) -
     result = _run(hook, *args, stdin=json.dumps(_payload("codex", "SessionStart")))
 
     assert (result.returncode, result.stdout) == (1, "")
-    assert result.stderr == "usage: probe.py codex|claude < payload.json\n"
+    assert result.stderr == "usage: probe.py codex|claude|agy < payload.json\n"
 
 
 def test_a_check_can_read_the_handled_events_without_a_host(hook: Path) -> None:

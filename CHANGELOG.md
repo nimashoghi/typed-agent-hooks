@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0
+
+Added:
+
+- The Google Antigravity CLI as a third host, `agy`. `app.main()` accepts `agy` as the host argument, and `typed_agent_hooks.agy` holds the wire schemas of its `SessionStart`, `PreInvocation`, `PreToolUse`, `PostToolUse` and `Stop` events. `PreInvocation` maps to `PromptSubmitted` only before a model call that answers a user prompt. The README section [agy](README.md#agy) lists the events and results that agy supports.
+
+Changed:
+
+- `core.Host`, `core.HOSTS` and `EventContext.host` include `"agy"`. Code that handles every host must handle it.
+- `app.handle("agy", payload)` returns `None` without running a handler for a `PreInvocation` that does not answer a user prompt.
+
 ## 0.3.0
 
 This release is breaking. The package keeps only the shared typed event layer and the Codex and Claude Code wire schemas. The host files now hold all host configuration.

@@ -1,6 +1,11 @@
 """Explicit host-to-shared event adapters."""
 
-from typed_agent_hooks import claude_code, codex
+import json
+from collections import deque
+from itertools import islice
+from pathlib import Path
+
+from typed_agent_hooks import agy, claude_code, codex
 from typed_agent_hooks.core import Host
 
 from .events import (
@@ -46,6 +51,17 @@ NATIVE_EVENT_NAMES: dict[Host, dict[type[BaseEvent], str]] = {
         SubagentStopped: "SubagentStop",
         TurnStopped: "Stop",
     },
+    # agy has no prompt event. PreInvocation fires before every model call;
+    # the adapter reports PromptSubmitted only for a call that answers a
+    # user prompt. PostToolUse carries both a completed and a failed call.
+    "agy": {
+        SessionStarted: "SessionStart",
+        PromptSubmitted: "PreInvocation",
+        ToolCallProposed: "PreToolUse",
+        ToolCallCompleted: "PostToolUse",
+        ToolCallFailed: "PostToolUse",
+        TurnStopped: "Stop",
+    },
 }
 
 
@@ -53,7 +69,8 @@ def native_event_name(event_type: type[BaseEvent], host: Host) -> str | None:
     """Return the host's native hook event name for a shared event type.
 
     Returns ``None`` when the host has no such event (Codex has no
-    ``ToolCallFailed``). Host files register a hook under this name.
+    ``ToolCallFailed``, and agy has no permission, compaction or subagent
+    events). Host files register a hook under this name.
     """
 
     return NATIVE_EVENT_NAMES[host].get(event_type)
@@ -231,3 +248,79 @@ def from_claude_code(event: claude_code.events.AnyInput) -> AnyEvent:
                 last_assistant_message=event.last_assistant_message,
             )
     raise AssertionError(f"unmapped Claude Code event type: {type(event).__name__}")
+
+
+def _answers_user_input(transcript: Path, steps: int) -> bool:
+    """Whether the model call that agy is about to make answers a user prompt.
+
+    A user prompt, a message from ``agentapi send-message`` and a Stop hook
+    that continues the turn all start a model run, and agy gives each the
+    previous prompt as ``lastUserInput``. The transcript holds one JSON step
+    per line. Before a call that answers a prompt, the last of the first
+    ``steps`` steps is the user's input, after any system messages that hooks
+    injected. Before any other call, it is the model's response or a tool result.
+    """
+
+    with transcript.open(encoding="utf-8") as lines:
+        recent = deque(islice(lines, steps), maxlen=64)
+    for line in reversed(recent):
+        kind = json.loads(line).get("type")
+        if kind != "SYSTEM_MESSAGE":
+            return kind == "USER_INPUT"
+    return False
+
+
+def from_agy(event: agy.events.AnyInput) -> AnyEvent | None:
+    """Map an agy wire event into its shared semantic event.
+
+    Returns ``None`` for a PreInvocation that does not answer a user prompt.
+    """
+
+    context = EventContext(
+        host="agy",
+        source_event=event.hook_event_name,
+        session_id=event.conversation_id,
+        transcript_path=event.transcript_path,
+        cwd=event.cwd,
+        model=event.model,
+    )
+    match event:
+        case agy.events.SessionStartInput():
+            # agy fires SessionStart only for a new conversation.
+            return SessionStarted(context=context, source="startup")
+        case agy.events.PreInvocationInput():
+            if not _answers_user_input(Path(event.transcript_path), event.initial_num_steps):
+                return None
+            if event.last_user_input is None:
+                raise ValueError("agy PreInvocation after a user prompt has no lastUserInput")
+            return PromptSubmitted(context=context, prompt=event.last_user_input)
+        case agy.events.PreToolUseInput():
+            return ToolCallProposed(
+                context=context,
+                tool_name=event.tool_call.name,
+                tool_input=event.tool_call.args,
+                tool_use_id=event.tool_call.id,
+            )
+        case agy.events.PostToolUseInput():
+            if event.error:
+                return ToolCallFailed(
+                    context=context,
+                    tool_name=event.tool_call.name,
+                    tool_input=event.tool_call.args,
+                    tool_use_id=event.tool_call.id,
+                    error=event.error,
+                )
+            return ToolCallCompleted(
+                context=context,
+                tool_name=event.tool_call.name,
+                tool_input=event.tool_call.args,
+                tool_response=None,
+                tool_use_id=event.tool_call.id,
+            )
+        case agy.events.StopInput():
+            return TurnStopped(
+                context=context,
+                stop_hook_active=event.continuation_active or event.execution_num > 0,
+                last_assistant_message=None,
+            )
+    raise AssertionError(f"unmapped agy event type: {type(event).__name__}")
