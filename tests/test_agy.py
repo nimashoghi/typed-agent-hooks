@@ -14,7 +14,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from typed_agent_hooks import agy, claude_code, codex, shared
 from typed_agent_hooks.core import parse_json_object, render_json
-from typed_agent_hooks.shared.adapters import from_agy, from_claude_code
+from typed_agent_hooks.shared.adapters import from_agy, from_claude_code, from_codex
 from typed_agent_hooks.shared.agy_outputs import to_agy_output
 from typed_agent_hooks.shared.outputs import SharedOutputError
 
@@ -230,14 +230,16 @@ def test_failed_tool_call_and_stop_continuation() -> None:
         (
             "PreToolUse",
             shared.outputs.AllowTool(
+                reason="Made safe.",
                 updated_input={
                     "CommandLine": "echo safe",
                     "WaitMsBeforeAsync": 5000,
                     "toolSummary": "Echo",
-                }
+                },
             ),
             {
                 "decision": "allow",
+                "reason": "Made safe.",
                 "overwrite": {
                     "CommandLine": "echo safe",
                     "WaitMsBeforeAsync": 5000,
@@ -814,3 +816,11 @@ def test_events_that_agy_never_sends_raise_a_shared_output_error() -> None:
     ):
         with pytest.raises(SharedOutputError, match=f"agy has no {event.event_name} event"):
             to_agy_output(event, output)
+
+
+def test_a_rewrite_of_arguments_that_are_not_an_object_raises() -> None:
+    codex_payloads = json.loads((FIXTURES / "codex_inputs.json").read_text(encoding="utf-8"))
+    payload = next(item for item in codex_payloads if item["hook_event_name"] == "PreToolUse")
+    event = from_codex(codex.parse_input({**payload, "tool_input": []}))
+    with pytest.raises(SharedOutputError, match="only object tool arguments"):
+        to_agy_output(event, shared.outputs.AllowTool(updated_input={"x": 2}))

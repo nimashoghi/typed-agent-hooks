@@ -80,7 +80,8 @@ def _tool_decision(event: AnyEvent, output: AllowTool | DenyTool) -> Converted:
         # agy merges the overwrite into the arguments that it sent, so a removed
         # argument would stay. HookApp gives the handler a copy of the event, so
         # event.tool_input holds those arguments.
-        assert isinstance(event.tool_input, dict)
+        if not isinstance(event.tool_input, dict):
+            raise _unsupported(event, output, "agy rewrites only object tool arguments")
         if missing := sorted(set(event.tool_input) - set(overwrite)):
             raise _unsupported(
                 event, output, f"agy cannot remove tool arguments {', '.join(missing)}"
