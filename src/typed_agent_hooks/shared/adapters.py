@@ -1,6 +1,5 @@
 """Explicit host-to-shared event adapters."""
 
-import json
 from itertools import islice
 from pathlib import Path
 
@@ -268,7 +267,8 @@ def _answers_user_input(transcript: Path, steps: int) -> bool:
     with transcript.open("rb") as lines:
         for line in islice(lines, steps):
             count += 1
-            kind = loads_json(line.decode("utf-8")).get("type")
+            step = loads_json(line.decode("utf-8"))
+            kind = step.get("type") if isinstance(step, dict) else None
             if not isinstance(kind, str):
                 raise ValueError(f"{transcript} has a step without a type")
             if kind != "SYSTEM_MESSAGE":

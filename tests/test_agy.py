@@ -663,7 +663,8 @@ def test_a_rewrite_replaces_whole_top_level_arguments() -> None:
         # A nested object is one argument: replacing it can drop its keys.
         return shared.outputs.AllowTool(updated_input={"CommandLine": "x", "Env": {"A": "1"}})
 
-    assert json.loads(nested.handle("agy", mapping)) == {
+    assert (rendered := nested.handle("agy", mapping)) is not None
+    assert json.loads(rendered) == {
         "decision": "allow",
         "overwrite": {"CommandLine": "x", "Env": {"A": "1"}},
     }
