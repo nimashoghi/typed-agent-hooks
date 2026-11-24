@@ -5,7 +5,7 @@ from itertools import islice
 from pathlib import Path
 
 from typed_agent_hooks import agy, claude_code, codex
-from typed_agent_hooks.core import Host, reject_constant
+from typed_agent_hooks.core import Host, loads_json
 
 from .events import (
     AnyEvent,
@@ -268,7 +268,7 @@ def _answers_user_input(transcript: Path, steps: int) -> bool:
     with transcript.open("rb") as lines:
         for line in islice(lines, steps):
             count += 1
-            kind = json.loads(line.decode("utf-8"), parse_constant=reject_constant).get("type")
+            kind = loads_json(line.decode("utf-8")).get("type")
             if not isinstance(kind, str):
                 raise ValueError(f"{transcript} has a step without a type")
             if kind != "SYSTEM_MESSAGE":

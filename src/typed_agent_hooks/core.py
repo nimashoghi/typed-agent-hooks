@@ -72,20 +72,41 @@ class BlockableOutput(CommonOutput):
         return self
 
 
-def reject_constant(name: str) -> object:
-    """json.loads' parse_constant: NaN and Infinity are not JSON."""
+def _reject_constant(name: str) -> object:
     raise ValueError(f"hook payload holds {name}, which is not JSON")
 
 
+def _finite_float(text: str) -> float:
+    # A valid JSON number such as 1e400 overflows to infinity.
+    if not math.isfinite(value := float(text)):
+        raise ValueError(f"hook payload holds {text}, which is no finite number")
+    return value
+
+
+def loads_json(text: str | bytes) -> object:
+    """Decode JSON text whose every number is finite.
+
+    Python's decoder accepts NaN and Infinity, which are not JSON, and turns a
+    number too large for a float into infinity.
+
+    Raises:
+        ValueError: If the text is malformed (json.JSONDecodeError) or holds
+            such a number.
+    """
+
+    return json.loads(text, parse_constant=_reject_constant, parse_float=_finite_float)
+
+
 def _require_finite(value: object) -> None:
-    if isinstance(value, float) and not math.isfinite(value):
-        raise ValueError(f"hook payload holds {value}, which is not JSON")
-    if isinstance(value, Mapping):
-        for item in value.values():
-            _require_finite(item)
-    elif isinstance(value, list | tuple):
-        for item in value:
-            _require_finite(item)
+    # Iterative, so that deep nesting raises no RecursionError.
+    pending, seen = [value], set()
+    while pending:
+        item = pending.pop()
+        if isinstance(item, float) and not math.isfinite(item):
+            raise ValueError(f"hook payload holds {item}, which is no finite number")
+        if isinstance(item, Mapping | list | tuple) and id(item) not in seen:
+            seen.add(id(item))
+            pending.extend(item.values() if isinstance(item, Mapping) else item)
 
 
 def parse_json_object(data: JsonInput) -> dict[str, object]:
@@ -99,12 +120,12 @@ def parse_json_object(data: JsonInput) -> dict[str, object]:
 
     Raises:
         TypeError: If the decoded value is not a JSON object.
-        ValueError: If JSON text is malformed (json.JSONDecodeError) or holds
-            NaN or Infinity, which are not JSON.
+        ValueError: If JSON text is malformed (json.JSONDecodeError), or the
+            payload holds a number that is not finite.
     """
 
     if isinstance(data, (str, bytes)):
-        decoded: object = json.loads(data, parse_constant=reject_constant)
+        decoded = loads_json(data)
     else:
         _require_finite(data)
         decoded = dict(data)

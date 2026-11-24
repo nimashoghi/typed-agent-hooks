@@ -15,7 +15,7 @@ Changed:
 
 Fixed:
 
-- `core.parse_json_object` refuses NaN and Infinity in a payload, as JSON text or as a mapping, in every host, so that no handler runs on such a payload.
+- `core.parse_json_object` refuses a number that is not finite in a payload, in every host, so that no handler runs on such a payload: NaN and Infinity (which are not JSON) and a number such as `1e400` that overflows a float, in JSON text, and a float that is not finite in a mapping. `core.loads_json` decodes JSON text with the same rule.
 - `core.render_json` refuses NaN and infinite numbers, which are not JSON, and text that is not valid UTF-8 (a lone surrogate), in every host. Before, such a result rendered invalid JSON, or `main()` failed to write it.
 
 ## 0.3.0

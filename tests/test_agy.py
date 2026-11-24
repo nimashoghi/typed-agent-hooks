@@ -11,7 +11,7 @@ import pytest
 from pydantic import ValidationError
 
 from typed_agent_hooks import agy, shared
-from typed_agent_hooks.core import render_json
+from typed_agent_hooks.core import parse_json_object, render_json
 from typed_agent_hooks.shared.adapters import from_agy
 from typed_agent_hooks.shared.agy_outputs import to_agy_output
 from typed_agent_hooks.shared.outputs import SharedOutputError
@@ -624,19 +624,54 @@ def test_numbers_that_json_lacks_never_reach_a_handler(tmp_path: Path) -> None:
         ran.append("prompted")
         return shared.outputs.Block(reason="No.")
 
-    text = json.dumps(_payload("PreToolUse")).replace(
-        '"WaitMsBeforeAsync": 5000', '"WaitMsBeforeAsync": Infinity'
-    )
-    with pytest.raises(ValueError, match="not JSON"):
-        app.handle("agy", text)
+    text = json.dumps(_payload("PreToolUse"))
+    for number in ("Infinity", "-Infinity", "NaN", "1e400", "-1e400"):
+        with pytest.raises(ValueError, match="not JSON|no finite number"):
+            app.handle(
+                "agy", text.replace('"WaitMsBeforeAsync": 5000', f'"WaitMsBeforeAsync": {number}')
+            )
     args = {"CommandLine": "x", "WaitMsBeforeAsync": float("inf")}
     mapping = _payload("PreToolUse", toolCall={"id": "c", "name": "run_command", "args": args})
-    with pytest.raises(ValueError, match="not JSON"):
+    with pytest.raises(ValueError, match="no finite number"):
         app.handle("agy", mapping)
     transcript = tmp_path / "transcript_full.jsonl"
-    transcript.write_text('{"type": "PLANNER_RESPONSE", "x": NaN}\n{"type": "USER_INPUT"}\n')
-    with pytest.raises(ValueError, match="not JSON"):
-        app.handle(
-            "agy", _payload("PreInvocation", transcriptPath=str(transcript), initialNumSteps=2)
+    for number in ("NaN", "1e400"):
+        transcript.write_text(
+            f'{{"type": "PLANNER_RESPONSE", "x": {number}}}\n{{"type": "USER_INPUT"}}\n'
         )
+        with pytest.raises(ValueError, match="not JSON|no finite number"):
+            app.handle(
+                "agy", _payload("PreInvocation", transcriptPath=str(transcript), initialNumSteps=2)
+            )
     assert ran == []
+
+
+def test_deeply_nested_finite_mappings_are_accepted() -> None:
+    nested: object = 1.5
+    for _ in range(5000):
+        nested = [nested]
+    assert parse_json_object({"ignored": nested})["ignored"] == nested
+
+
+def test_a_rewrite_replaces_whole_top_level_arguments() -> None:
+    args = {"CommandLine": "x", "Env": {"A": "1", "B": "2"}}
+    mapping = _payload("PreToolUse", toolCall={"id": "c", "name": "run_command", "args": args})
+    nested = shared.HookApp(name="nested")
+
+    @nested.on(shared.events.ToolCallProposed)
+    def replace_nested(_event: shared.events.ToolCallProposed) -> shared.outputs.Result:
+        # A nested object is one argument: replacing it can drop its keys.
+        return shared.outputs.AllowTool(updated_input={"CommandLine": "x", "Env": {"A": "1"}})
+
+    assert json.loads(nested.handle("agy", mapping)) == {
+        "decision": "allow",
+        "overwrite": {"CommandLine": "x", "Env": {"A": "1"}},
+    }
+    listed = shared.HookApp(name="listed")
+
+    @listed.on(shared.events.ToolCallProposed)
+    def replace_with_list(_event: shared.events.ToolCallProposed) -> shared.outputs.Result:
+        return shared.outputs.AllowTool(updated_input=["x"])
+
+    with pytest.raises(SharedOutputError, match="only object tool arguments"):
+        listed.handle("agy", mapping)
