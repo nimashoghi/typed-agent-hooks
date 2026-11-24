@@ -20,7 +20,7 @@ class BaseInput(InputModel):
     # in the folder that holds its hooks.json.
     cwd: str
     hook_event_name: str = Field(alias="hookEventName")
-    model: str | None = Field(default=None, alias="modelName")
+    model: str = Field(alias="modelName")
 
 
 class SessionStartInput(BaseInput):

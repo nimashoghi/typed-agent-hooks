@@ -41,8 +41,8 @@ def test_every_modeled_event_maps_back_to_its_native_name(
         assert shared.native_event_name(type(event), host) == name
         mapped.add(type(event))
 
-    # ToolCallFailed is Claude Code-only: Codex has no failure primitive and
-    # reports failures inside ordinary PostToolUse responses.
+    # Codex has no native tool-failure event; it reports failures inside
+    # ordinary PostToolUse responses.
     missing = {shared.events.ToolCallFailed} if host == "codex" else set()
     assert mapped == set(shared.events.EVENT_TYPES) - missing
 

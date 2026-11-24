@@ -95,6 +95,9 @@ def test_inputs_ignore_unknown_fields_and_reject_declared_type_drift() -> None:
         ("Stop", {"executionNum": -1}),
         # Tool arguments are an object.
         ("PreToolUse", {"toolCall": {"id": "c", "name": "run_command", "args": ["x"]}}),
+        # Every agy hook names the model.
+        ("SessionStart", {"modelName": None}),
+        ("SessionStart", {"modelName": 7}),
     ],
 )
 def test_inputs_reject_missing_counters_and_non_object_arguments(
@@ -542,7 +545,16 @@ def test_a_failed_call_leaves_no_notes_of_a_call_inside_it() -> None:
 
 
 @pytest.mark.parametrize(
-    "reason", ["TERMINAL_CUSTOM_HOOK", "USER_CANCELED", "ERROR", "MAX_INVOCATIONS"]
+    "reason",
+    [
+        "TERMINAL_CUSTOM_HOOK",
+        "USER_CANCELED",
+        "ERROR",
+        "MAX_INVOCATIONS",
+        "MAX_FORCED_INVOCATIONS",
+        "MAX_TOKEN_BUDGET_EXCEEDED",
+        "INJECTED_RESPONSE",
+    ],
 )
 def test_a_run_that_the_model_did_not_finish_runs_no_stop_handler(reason: str) -> None:
     # A Stop handler must not continue a turn that a hook refused or the user ended.
