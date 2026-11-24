@@ -169,7 +169,7 @@ agy fires different events from the other two hosts, and its outputs carry less.
 - `PostToolUse` carries both `ToolCallCompleted` and `ToolCallFailed` (when agy reports an `error`). A hook that handles only one of them writes nothing for the other. `tool_response` is `None`: agy gives hooks no tool output.
 - agy sends no permission mode, turn ID or last assistant message.
 - agy leaves `continuationActive` false after a Stop hook continued the turn, so `TurnStopped.stop_hook_active` also reads `executionNum`, the number of continuations in the turn.
-- agy shows no informational hook message to the user: its terminal does not show a system message whose `metadata.user_markdown` is set, and the model then does not get the step either. (The reason of a `Block` on `PromptSubmitted` is shown, as an error.) So for agy the package carries the main intent of `AddContext`, `Block`, `AllowTool` and `DenyTool` and leaves out their `system_message`. After `app.handle()`, `app.notes` names each field left out, and `main()` writes the notes to stderr after the output, without waiting on a full or closed pipe.
+- agy shows no informational hook message to the user: its terminal does not show a system message whose `metadata.user_markdown` is set, and the model then does not get the step either. (The reason of a `Block` on `PromptSubmitted` is shown, as an error.) So for agy the package carries the main intent of `AddContext`, `Block`, `AllowTool` and `DenyTool` and leaves out their `system_message`. After `app.handle()`, `app.notes` names each field that the call left out. `main()` does not report them: nothing reads a hook's stderr reliably, and a write there could delay the exit that the host waits for.
 
 Results that agy can carry:
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import signal
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -36,7 +35,9 @@ class HookApp:
         self.name = name
         self.handlers: dict[type[BaseEvent], Callable[[Any], Result]] = {}
         # After handle(): a note for each field of the result that the host left
-        # out (agy has no informational system_message).
+        # out (agy has no informational system_message). main() writes no notes:
+        # nothing reads a hook's stderr reliably, and a write there could delay
+        # the exit that the host waits for.
         self.notes: list[str] = []
 
     def on(self, event_type: type[EventT]) -> Callable[[Handler[EventT]], Handler[EventT]]:
@@ -64,6 +65,7 @@ class HookApp:
         every other failure, including an event that has no handler.
         """
 
+        self.notes = []
         output, self.notes = self._dispatch(host, payload)
         return output
 
@@ -104,27 +106,6 @@ class HookApp:
             raise LookupError(f"no handler for {event.context.host} {event.context.source_event}")
         return handler(event)
 
-    def _write_notes(self) -> None:
-        """Write the notes to stderr after the output, and never at its cost: a
-        full pipe or one that nobody reads loses the note, not the hook's exit."""
-        if not self.notes:
-            return
-        data = "".join(f"{self.name}: {note}\n" for note in self.notes).encode()
-        sigpipe = getattr(signal, "SIGPIPE", None)
-        previous = signal.signal(sigpipe, signal.SIG_IGN) if sigpipe is not None else None
-        try:
-            blocking = os.get_blocking(2)
-            os.set_blocking(2, False)
-            try:
-                os.write(2, data)
-            finally:
-                os.set_blocking(2, blocking)
-        except OSError:
-            pass
-        finally:
-            if sigpipe is not None:
-                signal.signal(sigpipe, previous)
-
     def main(self) -> None:
         """Run as a hook command: ``HOOK_FILE codex|claude|agy`` with the payload on stdin.
 
@@ -153,13 +134,11 @@ class HookApp:
             # a print at import, then goes to stderr.
             with os.fdopen(os.dup(1), "wb") as host_stdout:
                 os.dup2(2, 1)
-                self.notes = []
                 output = self.handle(host, sys.stdin.buffer.read())
                 if output is not None:
                     # The hosts read hook stdout as UTF-8, whatever the locale.
                     host_stdout.write(output.encode() + b"\n")
                     host_stdout.flush()
-            self._write_notes()
         # A handler's exit code must not reach the host: exit 2 blocks the action.
         except (Exception, SystemExit) as error:
             detail = " ".join(str(error).split())
