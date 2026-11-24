@@ -3,7 +3,7 @@
 import json
 import math
 from collections.abc import Mapping
-from typing import Literal, TypeAlias, cast
+from typing import Any, Literal, TypeAlias, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.types import JsonValue
@@ -73,13 +73,13 @@ class BlockableOutput(CommonOutput):
 
 
 def _reject_constant(name: str) -> object:
-    raise ValueError(f"hook payload holds {name}, which is not JSON")
+    raise ValueError(f"{name} is not JSON")
 
 
 def _finite_float(text: str) -> float:
     # A valid JSON number such as 1e400 overflows to infinity.
     if not math.isfinite(value := float(text)):
-        raise ValueError(f"hook payload holds {text}, which is no finite number")
+        raise ValueError(f"{text} is not a finite number")
     return value
 
 
@@ -97,16 +97,35 @@ def loads_json(text: str | bytes) -> object:
     return json.loads(text, parse_constant=_reject_constant, parse_float=_finite_float)
 
 
-def _require_finite(value: object) -> None:
-    # Iterative, so that deep nesting raises no RecursionError.
-    pending, seen = [value], set()
+def _snapshot(value: object) -> object:
+    """Copy a payload, reading each value once, with dicts for mappings and lists
+    for lists and tuples; raise for a float that is not finite.
+
+    Iterative, so that deep nesting raises no RecursionError. The handler gets
+    the copy, so a mapping that changes between reads cannot change what was
+    checked.
+    """
+
+    root: list[object] = [value]
+    pending: list[tuple[Any, Any]] = [(root, 0)]
+    copies: dict[int, tuple[object, object]] = {}  # the original keeps its id unique
     while pending:
-        item = pending.pop()
+        parent, key = pending.pop()
+        item = parent[key]
         if isinstance(item, float) and not math.isfinite(item):
-            raise ValueError(f"hook payload holds {item}, which is no finite number")
-        if isinstance(item, Mapping | list | tuple) and id(item) not in seen:
-            seen.add(id(item))
-            pending.extend(item.values() if isinstance(item, Mapping) else item)
+            raise ValueError(f"{item} is not a finite number")
+        if not isinstance(item, Mapping | list | tuple):
+            continue
+        if (known := copies.get(id(item))) is not None:
+            parent[key] = known[1]
+            continue
+        copy: Any = dict(item) if isinstance(item, Mapping) else list(item)
+        copies[id(item)] = (item, copy)
+        parent[key] = copy
+        pending.extend(
+            (copy, index) for index in (copy if isinstance(copy, dict) else range(len(copy)))
+        )
+    return root[0]
 
 
 def parse_json_object(data: JsonInput) -> dict[str, object]:
@@ -124,11 +143,7 @@ def parse_json_object(data: JsonInput) -> dict[str, object]:
             payload holds a number that is not finite.
     """
 
-    if isinstance(data, (str, bytes)):
-        decoded = loads_json(data)
-    else:
-        _require_finite(data)
-        decoded = dict(data)
+    decoded = loads_json(data) if isinstance(data, (str, bytes)) else _snapshot(data)
     if not isinstance(decoded, dict):
         raise TypeError("hook payload must be a JSON object")
     return cast(dict[str, object], decoded)

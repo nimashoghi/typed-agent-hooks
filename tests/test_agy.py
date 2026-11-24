@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -626,20 +627,21 @@ def test_numbers_that_json_lacks_never_reach_a_handler(tmp_path: Path) -> None:
 
     text = json.dumps(_payload("PreToolUse"))
     for number in ("Infinity", "-Infinity", "NaN", "1e400", "-1e400"):
-        with pytest.raises(ValueError, match="not JSON|no finite number"):
+        with pytest.raises(ValueError, match="not JSON|not a finite number"):
             app.handle(
                 "agy", text.replace('"WaitMsBeforeAsync": 5000', f'"WaitMsBeforeAsync": {number}')
             )
     args = {"CommandLine": "x", "WaitMsBeforeAsync": float("inf")}
     mapping = _payload("PreToolUse", toolCall={"id": "c", "name": "run_command", "args": args})
-    with pytest.raises(ValueError, match="no finite number"):
+    with pytest.raises(ValueError, match="not a finite number"):
         app.handle("agy", mapping)
     transcript = tmp_path / "transcript_full.jsonl"
     for number in ("NaN", "1e400"):
+        # The error names the line, not the payload.
         transcript.write_text(
             f'{{"type": "PLANNER_RESPONSE", "x": {number}}}\n{{"type": "USER_INPUT"}}\n'
         )
-        with pytest.raises(ValueError, match="not JSON|no finite number"):
+        with pytest.raises(ValueError, match=f"transcript_full.jsonl line 1: {number} is not"):
             app.handle(
                 "agy", _payload("PreInvocation", transcriptPath=str(transcript), initialNumSteps=2)
             )
@@ -650,7 +652,11 @@ def test_deeply_nested_finite_mappings_are_accepted() -> None:
     nested: object = 1.5
     for _ in range(5000):
         nested = [nested]
-    assert parse_json_object({"ignored": nested})["ignored"] == nested
+    copied = parse_json_object({"ignored": nested})["ignored"]
+    for _ in range(5000):
+        assert isinstance(copied, list) and len(copied) == 1
+        copied = copied[0]
+    assert copied == 1.5
 
 
 def test_a_rewrite_replaces_whole_top_level_arguments() -> None:
@@ -676,3 +682,40 @@ def test_a_rewrite_replaces_whole_top_level_arguments() -> None:
 
     with pytest.raises(SharedOutputError, match="only object tool arguments"):
         listed.handle("agy", mapping)
+
+
+class _ReadCountingMapping(Mapping[str, object]):
+    """A payload that returns a finite number on its first read only."""
+
+    def __init__(self, payload: dict[str, object]) -> None:
+        self.payload, self.reads = payload, dict.fromkeys(payload, 0)
+
+    def __getitem__(self, key: str) -> object:
+        self.reads[key] += 1
+        if key == "toolCall" and self.reads[key] > 1:
+            return {"id": "c", "name": "run_command", "args": {"CommandLine": float("inf")}}
+        return self.payload[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.payload)
+
+    def __len__(self) -> int:
+        return len(self.payload)
+
+
+def test_a_mapping_payload_is_read_once_and_checked_as_read() -> None:
+    app = shared.HookApp(name="once")
+    seen: list[object] = []
+
+    @app.on(shared.events.ToolCallProposed)
+    def proposed(event: shared.events.ToolCallProposed) -> shared.outputs.Result:
+        seen.append(event.tool_input)
+        return shared.outputs.DenyTool(reason="No.")
+
+    args = {"CommandLine": 1.0}
+    payload = _ReadCountingMapping(
+        _payload("PreToolUse", toolCall={"id": "c", "name": "run_command", "args": args})
+    )
+    app.handle("agy", payload)
+    assert seen == [args]
+    assert set(payload.reads.values()) == {1}

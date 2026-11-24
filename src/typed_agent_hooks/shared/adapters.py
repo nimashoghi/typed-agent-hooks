@@ -267,7 +267,10 @@ def _answers_user_input(transcript: Path, steps: int) -> bool:
     with transcript.open("rb") as lines:
         for line in islice(lines, steps):
             count += 1
-            step = loads_json(line.decode("utf-8"))
+            try:
+                step = loads_json(line.decode("utf-8"))
+            except ValueError as error:  # also a line that is not UTF-8
+                raise ValueError(f"{transcript} line {count}: {error}") from error
             kind = step.get("type") if isinstance(step, dict) else None
             if not isinstance(kind, str):
                 raise ValueError(f"{transcript} has a step without a type")
