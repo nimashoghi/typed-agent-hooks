@@ -1,6 +1,7 @@
 """Shared primitives for strict hook schemas and rendering."""
 
 import json
+import math
 from collections.abc import Mapping
 from typing import Literal, TypeAlias, cast
 
@@ -71,6 +72,22 @@ class BlockableOutput(CommonOutput):
         return self
 
 
+def reject_constant(name: str) -> object:
+    """json.loads' parse_constant: NaN and Infinity are not JSON."""
+    raise ValueError(f"hook payload holds {name}, which is not JSON")
+
+
+def _require_finite(value: object) -> None:
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError(f"hook payload holds {value}, which is not JSON")
+    if isinstance(value, Mapping):
+        for item in value.values():
+            _require_finite(item)
+    elif isinstance(value, list | tuple):
+        for item in value:
+            _require_finite(item)
+
+
 def parse_json_object(data: JsonInput) -> dict[str, object]:
     """Parse hook input and require a JSON object.
 
@@ -82,10 +99,15 @@ def parse_json_object(data: JsonInput) -> dict[str, object]:
 
     Raises:
         TypeError: If the decoded value is not a JSON object.
-        json.JSONDecodeError: If JSON text is malformed.
+        ValueError: If JSON text is malformed (json.JSONDecodeError) or holds
+            NaN or Infinity, which are not JSON.
     """
 
-    decoded: object = json.loads(data) if isinstance(data, (str, bytes)) else dict(data)
+    if isinstance(data, (str, bytes)):
+        decoded: object = json.loads(data, parse_constant=reject_constant)
+    else:
+        _require_finite(data)
+        decoded = dict(data)
     if not isinstance(decoded, dict):
         raise TypeError("hook payload must be a JSON object")
     return cast(dict[str, object], decoded)

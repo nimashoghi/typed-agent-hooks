@@ -597,3 +597,46 @@ def test_an_allowed_call_notes_its_omitted_message() -> None:
 def test_an_unknown_stop_reason_raises(reason: str) -> None:
     with pytest.raises(ValueError, match="unknown agy terminationReason"):
         _event("Stop", terminationReason=reason)
+
+
+def test_a_continuation_flag_alone_marks_an_active_stop_hook() -> None:
+    event = _event("Stop", continuationActive=True, executionNum=0)
+    assert isinstance(event, shared.events.TurnStopped)
+    assert event.stop_hook_active is True
+
+
+def test_a_post_tool_use_without_an_error_key_is_a_completed_call() -> None:
+    payload = {key: value for key, value in _payload("PostToolUse").items() if key != "error"}
+    assert isinstance(from_agy(agy.parse_input(payload)), shared.events.ToolCallCompleted)
+
+
+def test_numbers_that_json_lacks_never_reach_a_handler(tmp_path: Path) -> None:
+    app = shared.HookApp(name="strict")
+    ran: list[str] = []
+
+    @app.on(shared.events.ToolCallProposed)
+    def proposed(_event: shared.events.ToolCallProposed) -> shared.outputs.Result:
+        ran.append("proposed")
+        return shared.outputs.DenyTool(reason="No.")
+
+    @app.on(shared.events.PromptSubmitted)
+    def prompted(_event: shared.events.PromptSubmitted) -> shared.outputs.Result:
+        ran.append("prompted")
+        return shared.outputs.Block(reason="No.")
+
+    text = json.dumps(_payload("PreToolUse")).replace(
+        '"WaitMsBeforeAsync": 5000', '"WaitMsBeforeAsync": Infinity'
+    )
+    with pytest.raises(ValueError, match="not JSON"):
+        app.handle("agy", text)
+    args = {"CommandLine": "x", "WaitMsBeforeAsync": float("inf")}
+    mapping = _payload("PreToolUse", toolCall={"id": "c", "name": "run_command", "args": args})
+    with pytest.raises(ValueError, match="not JSON"):
+        app.handle("agy", mapping)
+    transcript = tmp_path / "transcript_full.jsonl"
+    transcript.write_text('{"type": "PLANNER_RESPONSE", "x": NaN}\n{"type": "USER_INPUT"}\n')
+    with pytest.raises(ValueError, match="not JSON"):
+        app.handle(
+            "agy", _payload("PreInvocation", transcriptPath=str(transcript), initialNumSteps=2)
+        )
+    assert ran == []
