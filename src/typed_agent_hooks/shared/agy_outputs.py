@@ -5,8 +5,8 @@ start and before a model call, it shows no informational hook message to the
 user, and it can end a turn early only as an error. A result whose intent agy
 cannot carry raises ``SharedOutputError``. The one exception is the
 informational ``system_message`` of a result whose main intent agy carries: it
-is left out, and the converter returns a note that says so, which ``main()``
-writes to stderr after the output.
+is left out, and the converter returns a note that says so, which
+``HookApp.handle()`` keeps in ``app.notes``.
 """
 
 from typed_agent_hooks import agy

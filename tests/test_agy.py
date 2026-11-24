@@ -264,6 +264,9 @@ def test_results_render_the_agy_wire(
         ("PreToolUse", shared.outputs.AllowTool(updated_input={"CommandLine": "true"})),
         ("PreInvocation", shared.outputs.Block(reason="")),
         ("Stop", shared.outputs.Block(reason="")),
+        # agy has no permission-request event.
+        ("PreToolUse", shared.outputs.AllowPermission()),
+        ("Stop", shared.outputs.DenyPermission(reason="No.")),
     ],
 )
 def test_results_that_agy_cannot_carry_raise(
@@ -272,7 +275,7 @@ def test_results_that_agy_cannot_carry_raise(
     event = _prompt(tmp_path) if event_name == "PreInvocation" else _event(event_name)
     assert event is not None
 
-    with pytest.raises(SharedOutputError, match="not supported by agy|needs a reason"):
+    with pytest.raises(SharedOutputError, match="not supported by agy|needs a reason|not portable"):
         to_agy_output(event, cast(Any, result))
 
 
@@ -518,3 +521,21 @@ def test_an_omitted_message_never_stops_the_decision(tmp_path: Path) -> None:
     assert result.returncode == 0
     assert json.loads(result.stdout) == {"decision": "deny", "reason": "Not here."}
     assert result.stderr == ""
+
+
+def test_a_failed_call_leaves_no_notes_of_a_call_inside_it() -> None:
+    app = shared.HookApp(name="nested")
+
+    @app.on(shared.events.SessionStarted)
+    def started(_event: shared.events.SessionStarted) -> shared.outputs.Result:
+        return shared.outputs.AddContext(text="Context.", system_message="Shown.")
+
+    @app.on(shared.events.ToolCallProposed)
+    def proposed(_event: shared.events.ToolCallProposed) -> shared.outputs.Result:
+        app.handle("agy", _payload("SessionStart"))
+        assert app.notes
+        return shared.outputs.Stop(reason="Done.")
+
+    with pytest.raises(SharedOutputError):
+        app.handle("agy", _payload("PreToolUse"))
+    assert app.notes == []

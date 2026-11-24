@@ -65,9 +65,14 @@ class HookApp:
         every other failure, including an event that has no handler.
         """
 
-        self.notes = []
-        output, self.notes = self._dispatch(host, payload)
-        return output
+        notes: list[str] = []
+        try:
+            output, notes = self._dispatch(host, payload)
+            return output
+        finally:
+            # Also after a failure (with no notes), and after any call that the
+            # handler made on this app meanwhile.
+            self.notes = notes
 
     def _dispatch(self, host: Host, payload: JsonInput) -> tuple[str | None, list[str]]:
         """handle()'s work, with a note for each field of the result that the
