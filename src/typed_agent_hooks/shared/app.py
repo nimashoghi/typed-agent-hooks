@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import contextlib
 import os
+import signal
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -35,6 +35,9 @@ class HookApp:
     def __init__(self, *, name: str) -> None:
         self.name = name
         self.handlers: dict[type[BaseEvent], Callable[[Any], Result]] = {}
+        # After handle(): a note for each field of the result that the host left
+        # out (agy has no informational system_message).
+        self.notes: list[str] = []
 
     def on(self, event_type: type[EventT]) -> Callable[[Handler[EventT]], Handler[EventT]]:
         """Register the decorated function as the handler of one shared event type."""
@@ -53,18 +56,20 @@ class HookApp:
     def handle(self, host: Host, payload: JsonInput) -> str | None:
         """Parse one host payload, call its handler, and render the host output.
 
-        Returns ``None`` when the handler returns ``None``. In agy, it also
+        Afterwards, ``notes`` lists the fields of the result that the host
+        left out. Returns ``None`` when the handler returns ``None``. In agy, it also
         returns ``None`` without a handler for a PreInvocation that does not
         answer a user prompt, and for a PostToolUse that a hook does not handle
         but whose other kind (completed or failed call) it handles. Raises on
         every other failure, including an event that has no handler.
         """
 
-        return self._dispatch(host, payload)[0]
+        output, self.notes = self._dispatch(host, payload)
+        return output
 
     def _dispatch(self, host: Host, payload: JsonInput) -> tuple[str | None, list[str]]:
-        """handle(), with a note for each field of the result that the host
-        leaves out. A note exists only for an output that rendered."""
+        """handle()'s work, with a note for each field of the result that the
+        host leaves out. A note exists only for an output that rendered."""
 
         notes: list[str] = []
         if host == "codex":
@@ -99,6 +104,27 @@ class HookApp:
             raise LookupError(f"no handler for {event.context.host} {event.context.source_event}")
         return handler(event)
 
+    def _write_notes(self) -> None:
+        """Write the notes to stderr after the output, and never at its cost: a
+        full pipe or one that nobody reads loses the note, not the hook's exit."""
+        if not self.notes:
+            return
+        data = "".join(f"{self.name}: {note}\n" for note in self.notes).encode()
+        sigpipe = getattr(signal, "SIGPIPE", None)
+        previous = signal.signal(sigpipe, signal.SIG_IGN) if sigpipe is not None else None
+        try:
+            blocking = os.get_blocking(2)
+            os.set_blocking(2, False)
+            try:
+                os.write(2, data)
+            finally:
+                os.set_blocking(2, blocking)
+        except OSError:
+            pass
+        finally:
+            if sigpipe is not None:
+                signal.signal(sigpipe, previous)
+
     def main(self) -> None:
         """Run as a hook command: ``HOOK_FILE codex|claude|agy`` with the payload on stdin.
 
@@ -127,16 +153,13 @@ class HookApp:
             # a print at import, then goes to stderr.
             with os.fdopen(os.dup(1), "wb") as host_stdout:
                 os.dup2(2, 1)
-                output, notes = self._dispatch(host, sys.stdin.buffer.read())
+                self.notes = []
+                output = self.handle(host, sys.stdin.buffer.read())
                 if output is not None:
                     # The hosts read hook stdout as UTF-8, whatever the locale.
                     host_stdout.write(output.encode() + b"\n")
                     host_stdout.flush()
-            # After the output, and never at its cost: a note is information.
-            # Unbuffered, so that a closed stderr leaves nothing to fail at exit.
-            for note in notes:
-                with contextlib.suppress(OSError):
-                    os.write(2, f"{self.name}: {note}\n".encode())
+            self._write_notes()
         # A handler's exit code must not reach the host: exit 2 blocks the action.
         except (Exception, SystemExit) as error:
             detail = " ".join(str(error).split())

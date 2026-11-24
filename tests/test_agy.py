@@ -1,5 +1,6 @@
 """The agy host: its wire schemas, its mapping to shared events and its outputs."""
 
+import contextlib
 import json
 import os
 import subprocess
@@ -416,17 +417,54 @@ def test_main_runs_a_hook_for_agy(
     assert (result.returncode, result.stdout, result.stderr) == (0, stdout, "")
 
 
-def test_an_output_that_does_not_render_gets_no_note() -> None:
-    app = shared.HookApp(name="rewrite")
+NAN_HOOK = """\
+from typed_agent_hooks import shared
+
+app = shared.HookApp(name="rewrite")
+
+
+@app.on(shared.events.ToolCallProposed)
+def proposed(event):
+    rewrite = {**event.tool_input, "WaitMsBeforeAsync": [float("nan")]}
+    return shared.outputs.AllowTool(updated_input=rewrite, system_message="x")
+
+
+if __name__ == "__main__":
+    app.main()
+"""
+
+
+def test_an_output_that_does_not_render_gets_no_note(tmp_path: Path) -> None:
+    hook = tmp_path / "rewrite.py"
+    hook.write_text(NAN_HOOK, encoding="utf-8")
+    env = {key: value for key, value in os.environ.items() if key != "PYTHONUNBUFFERED"}
+
+    result = subprocess.run(
+        [sys.executable, str(hook), "agy"],
+        input=json.dumps(_payload("PreToolUse")),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=env,
+    )
+
+    assert (result.returncode, result.stdout) == (0, "")
+    (line,) = result.stderr.splitlines()
+    assert line.startswith("rewrite: ValueError: Out of range float values are not JSON compliant")
+
+
+def test_in_process_callers_read_the_notes() -> None:
+    app = shared.HookApp(name="deny")
 
     @app.on(shared.events.ToolCallProposed)
-    def proposed(event: shared.events.ToolCallProposed) -> shared.outputs.Result:
-        assert isinstance(event.tool_input, dict)
-        rewrite = {**event.tool_input, "WaitMsBeforeAsync": [float("nan")]}
-        return shared.outputs.AllowTool(updated_input=rewrite, system_message="x")
+    def proposed(_event: shared.events.ToolCallProposed) -> shared.outputs.Result:
+        return shared.outputs.DenyTool(reason="Not here.", system_message="Ask first.")
 
-    with pytest.raises(ValueError, match="JSON compliant"):
-        app._dispatch("agy", _payload("PreToolUse"))
+    assert app.handle("agy", _payload("PreToolUse")) == '{"decision":"deny","reason":"Not here."}'
+    assert app.notes == [
+        "agy left out the system_message of DenyTool on ToolCallProposed: "
+        "agy shows no informational hook message to the user"
+    ]
 
 
 DENY_HOOK = """\
@@ -468,9 +506,14 @@ def test_an_omitted_message_never_stops_the_decision(tmp_path: Path) -> None:
     )
 
 
-def test_a_closed_stderr_never_stops_the_decision(tmp_path: Path) -> None:
+@pytest.mark.parametrize("default_sigpipe", [False, True])
+def test_a_closed_stderr_never_stops_the_decision(tmp_path: Path, default_sigpipe: bool) -> None:
     hook = tmp_path / "deny.py"
-    hook.write_text(DENY_HOOK, encoding="utf-8")
+    # A hook may restore the default SIGPIPE action, which ends the process.
+    prefix = (
+        "import signal\nsignal.signal(signal.SIGPIPE, signal.SIG_DFL)\n" if default_sigpipe else ""
+    )
+    hook.write_text(prefix + DENY_HOOK, encoding="utf-8")
     env = {key: value for key, value in os.environ.items() if key != "PYTHONUNBUFFERED"}
     read, write = os.pipe()
     os.close(read)  # nobody reads the hook's stderr
@@ -486,6 +529,34 @@ def test_a_closed_stderr_never_stops_the_decision(tmp_path: Path) -> None:
         )
     finally:
         os.close(write)
+
+    assert result.returncode == 0
+    assert json.loads(result.stdout) == {"decision": "deny", "reason": "Not here."}
+
+
+def test_a_full_stderr_never_stops_the_decision(tmp_path: Path) -> None:
+    hook = tmp_path / "deny.py"
+    hook.write_text(DENY_HOOK, encoding="utf-8")
+    env = {key: value for key, value in os.environ.items() if key != "PYTHONUNBUFFERED"}
+    read, write = os.pipe()
+    os.set_blocking(write, False)
+    with contextlib.suppress(BlockingIOError):
+        while True:
+            os.write(write, b"x" * 65536)  # a reader that does not read
+    os.set_blocking(write, True)
+    try:
+        result = subprocess.run(
+            [sys.executable, str(hook), "agy"],
+            input=json.dumps(_payload("PreToolUse")),
+            stdout=subprocess.PIPE,
+            stderr=write,
+            text=True,
+            timeout=30,
+            env=env,
+        )
+    finally:
+        os.close(write)
+        os.close(read)
 
     assert result.returncode == 0
     assert json.loads(result.stdout) == {"decision": "deny", "reason": "Not here."}

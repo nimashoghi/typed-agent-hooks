@@ -124,6 +124,24 @@ def test_context_output_matches_the_host_wire(
     assert result.stdout == json.dumps(expected, separators=(",", ":")) + "\n"
 
 
+def test_main_runs_an_overridden_handle(tmp_path: Path) -> None:
+    hook = tmp_path / "scoped.py"
+    hook.write_text(
+        HOOK.replace(
+            'app = shared.HookApp(name="probe")',
+            "class Scoped(shared.HookApp):\n"
+            "    def handle(self, host, payload):\n"
+            "        return None\n\n\n"
+            'app = Scoped(name="probe")',
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run(hook, "codex", stdin=json.dumps(_payload("codex", "PreToolUse")))
+
+    assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
+
+
 def test_a_print_at_import_goes_to_stderr(tmp_path: Path) -> None:
     hook = tmp_path / "loud.py"
     hook.write_text('print("helper module loaded")\n' + HOOK, encoding="utf-8")
