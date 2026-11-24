@@ -1,6 +1,6 @@
 # typed-agent-hooks
 
-`typed-agent-hooks` gives OpenAI Codex and Anthropic Claude Code hooks one set of typed events. A hook file handles shared events, such as `ToolCallCompleted`. The package parses the host payload, maps it to the shared event, calls the handler, and writes the output in the format of that host. A hook file never names a host.
+`typed-agent-hooks` gives OpenAI Codex, Anthropic Claude Code and the Google Antigravity CLI (`agy`) hooks one set of typed events. A hook file handles shared events, such as `ToolCallCompleted`. The package parses the host payload, maps it to the shared event, calls the handler, and writes the output in the format of that host. A hook file never names a host.
 
 The host files hold the native event, matcher, timeout and command. The package does not generate or install host configuration.
 
@@ -12,9 +12,9 @@ Each hook is one executable PEP 723 file:
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.13"
-# dependencies = ["typed-agent-hooks==0.3.0"]
+# dependencies = ["typed-agent-hooks==0.4.0"]
 # [tool.uv]
-# exclude-newer = "2026-10-25T00:00:00Z"
+# exclude-newer = "2026-11-25T00:00:00Z"
 # ///
 """Suggest the notebook when a Bash command runs inline Python."""
 
@@ -35,7 +35,7 @@ if __name__ == "__main__":
     app.main()
 ```
 
-uv uses only uploads from before the `exclude-newer` date, for every package. Set it to a time after the upload of the pinned `typed-agent-hooks` release, or uv cannot find that release. The date also freezes the other dependencies. The date in the example comes from before the 0.3.0 upload; replace it when you pin a release.
+uv uses only uploads from before the `exclude-newer` date, for every package. Set it to a time after the upload of the pinned `typed-agent-hooks` release, or uv cannot find that release. The date also freezes the other dependencies.
 
 ## Host files
 
@@ -75,15 +75,35 @@ Claude Code, in `.claude/settings.json`:
 }
 ```
 
+agy gives hooks no tool output and takes no context after a tool call, so the hook above does nothing useful there (see [agy](#agy)). A hook that adds context when a session starts works in all three hosts:
+
+```python
+@app.on(shared.events.SessionStarted)
+def session_started(event: shared.events.SessionStarted) -> shared.outputs.Result:
+    return shared.outputs.AddContext(text="Run the tests with uv run pytest.")
+```
+
+agy reads it from `.agents/hooks.json`, which names each hook. agy runs a hook command in the folder that holds this file, so the path starts with `../`:
+
+```json
+{
+  "project-guide": {
+    "SessionStart": [
+      { "type": "command", "command": "../.agent-hooks/project-guide.py agy || true", "timeout": 10 }
+    ]
+  }
+}
+```
+
 ## What `main()` does
 
-`app.main()` reads the host from its first argument (`codex` or `claude`) and the payload from stdin. The payload's `hook_event_name` selects the event. `main()` calls the handler of that event and writes the host output to stdout.
+`app.main()` reads the host from its first argument (`codex`, `claude` or `agy`) and the payload from stdin. The payload's `hook_event_name` (`hookEventName` in agy) selects the event. `main()` calls the handler of that event and writes the host output to stdout.
 
 - A handler that returns `None` writes nothing. Everything else that the process writes to stdout (a `print` at import or in a handler, a child process, a C library) goes to stderr, so stdout holds only the host output. Text that Python wrote to stdout before `main()` runs and without a buffer (`python -u` or `PYTHONUNBUFFERED`) cannot be recalled.
 - A failure fails open: one line on stderr, nothing on stdout, exit 0. Failures include a payload that does not parse, an event that has no handler, an event that has no shared equivalent, a handler exception or `sys.exit`, and an output that the event cannot carry.
-- A missing or unknown host argument is a programming error: a usage line on stderr and exit 1. Both hosts read exit 1 as a non-blocking error, so a wrong host file does not block a tool call or a prompt.
+- A missing or unknown host argument is a programming error: a usage line on stderr and exit 1. Codex and Claude Code read exit 1 as a non-blocking error, so a wrong host file does not block a tool call or a prompt.
 
-`main()` fails open only after the file runs. `uv run --script` can fail before that, for example when the uv cache is cold and the package index is not available. uv then exits 2, which both hosts read as a blocking error. The `|| true` in the host command turns that exit into 0. `main()` reports every block and deny decision as JSON with exit 0, so no intended behavior depends on the exit code.
+`main()` fails open only after the file runs. `uv run --script` can fail before that, for example when the uv cache is cold and the package index is not available. uv then exits 2, which Codex and Claude Code read as a blocking error. The `|| true` in the host command turns that exit into 0. `main()` reports every block and deny decision as JSON with exit 0, so no intended behavior depends on the exit code.
 
 `app.handle(host, payload)` does the same work in the current process and raises on each failure. Use it in tests.
 
@@ -103,34 +123,34 @@ for event_type in app.handlers:
     print(shared.native_event_name(event_type, "codex"), shared.native_event_name(event_type, "claude"))
 ```
 
-`app.handlers` maps each shared event type to its handler. `shared.native_event_name(event_type, host)` returns the native event name, or `None` when the host has no such event. Codex has no `ToolCallFailed` event. Claude Code sends a failed tool call as `PostToolUseFailure`. Codex sends a shell command that exits non-zero as `PostToolUse`, and sends no hook for some other failures, such as an MCP tool error. A hook that must see failed shell commands in both hosts handles `ToolCallCompleted` and `ToolCallFailed`.
+`app.handlers` maps each shared event type to its handler. `shared.native_event_name(event_type, host)` returns the native event name, or `None` when the host has no such event. Codex has no `ToolCallFailed` event, and agy has no permission, compaction or subagent events. Claude Code sends a failed tool call as `PostToolUseFailure`. Codex sends a shell command that exits non-zero as `PostToolUse`, and sends no hook for some other failures, such as an MCP tool error. A hook that must see failed shell commands in both hosts handles `ToolCallCompleted` and `ToolCallFailed`.
 
 ## Shared events
 
-| Shared event (`shared.events`) | Codex | Claude Code |
-| --- | --- | --- |
-| `SessionStarted` | `SessionStart` | `SessionStart` |
-| `PromptSubmitted` | `UserPromptSubmit` | `UserPromptSubmit` |
-| `ToolCallProposed` | `PreToolUse` | `PreToolUse` |
-| `PermissionRequested` | `PermissionRequest` | `PermissionRequest` |
-| `ToolCallCompleted` | `PostToolUse` | `PostToolUse` |
-| `ToolCallFailed` | none | `PostToolUseFailure` |
-| `CompactionStarting` | `PreCompact` | `PreCompact` |
-| `CompactionFinished` | `PostCompact` | `PostCompact` |
-| `SubagentStarted` | `SubagentStart` | `SubagentStart` |
-| `SubagentStopped` | `SubagentStop` | `SubagentStop` |
-| `TurnStopped` | `Stop` | `Stop` |
+| Shared event (`shared.events`) | Codex | Claude Code | agy |
+| --- | --- | --- | --- |
+| `SessionStarted` | `SessionStart` | `SessionStart` | `SessionStart` |
+| `PromptSubmitted` | `UserPromptSubmit` | `UserPromptSubmit` | `PreInvocation` |
+| `ToolCallProposed` | `PreToolUse` | `PreToolUse` | `PreToolUse` |
+| `PermissionRequested` | `PermissionRequest` | `PermissionRequest` | none |
+| `ToolCallCompleted` | `PostToolUse` | `PostToolUse` | `PostToolUse` |
+| `ToolCallFailed` | none | `PostToolUseFailure` | `PostToolUse` |
+| `CompactionStarting` | `PreCompact` | `PreCompact` | none |
+| `CompactionFinished` | `PostCompact` | `PostCompact` | none |
+| `SubagentStarted` | `SubagentStart` | `SubagentStart` | none |
+| `SubagentStopped` | `SubagentStop` | `SubagentStop` | none |
+| `TurnStopped` | `Stop` | `Stop` | `Stop` |
 
 Every event carries `event.context` with the host, session ID, working directory and other session data.
 
 ## Results
 
-A handler returns one result from `shared.outputs`, or `None`. Each result is valid only on the events in this table. On any other event it raises `SharedOutputError` in both hosts, and `main()` fails open. The package does not guess a translation.
+A handler returns one result from `shared.outputs`, or `None`. Each result is valid only on the events in this table. On any other event it raises `SharedOutputError` in every host, and `main()` fails open. The package does not guess a translation. agy carries less than this table; [agy](#agy) lists its limits.
 
 | Result | Valid events | Notes |
 | --- | --- | --- |
 | `None` | every event | Writes nothing. |
-| `AddContext` | `SessionStarted`, `PromptSubmitted`, `ToolCallProposed`, `ToolCallCompleted`, `ToolCallFailed`, `SubagentStarted` | `ToolCallFailed` is Claude Code only. |
+| `AddContext` | `SessionStarted`, `PromptSubmitted`, `ToolCallProposed`, `ToolCallCompleted`, `ToolCallFailed`, `SubagentStarted` | Codex has no `ToolCallFailed`. |
 | `SystemMessage` | every event except `CompactionStarting` and `CompactionFinished` | Claude Code ignores `systemMessage` on compaction events. |
 | `Block` | `PromptSubmitted`, `SubagentStopped`, `TurnStopped` | It carries no context: on a blocked prompt, Codex keeps the context for the next turn and Claude Code drops it. Not on `ToolCallCompleted`: Claude Code keeps the tool output next to the reason, and Codex replaces it. |
 | `Stop` | `PromptSubmitted`, `SubagentStopped`, `TurnStopped` | A stated host difference: Claude Code keeps `stopReason` in the conversation, so the model sees it if the conversation continues, while Codex does not give it to the model. Not on `SessionStarted` (Claude Code has no decision control there) or `ToolCallCompleted` (Codex turns it into model feedback and continues). |
@@ -140,9 +160,34 @@ A handler returns one result from `shared.outputs`, or `None`. Each result is va
 
 The compaction events accept no result except `None`. For context after compaction, return `AddContext` from `SessionStarted` with `source == "compact"`.
 
+## agy
+
+agy fires different events from the other two hosts, and its outputs carry less. These notes come from agy 1.5.16.
+
+- agy has no prompt event. `PreInvocation` fires before every model call. The package reports `PromptSubmitted` only for the first call of a run (`invocationNum` 0) that answers a user prompt; for any other call, `main()` runs no handler and writes nothing. agy also starts a run for a message from `agentapi send-message` and for a Stop hook that continues the turn, and it gives each of these runs the previous prompt as `lastUserInput`. To tell them apart, the package reads the first `initialNumSteps` steps of the conversation transcript: before a call that answers a prompt, the last of them that is not a system message from a hook is the user's input. A hook registered on `PreInvocation` still starts a process before every model call.
+- `SessionStart` fires only for a new conversation, not when agy resumes one, so `source` is always `"startup"`.
+- `PostToolUse` carries both `ToolCallCompleted` and `ToolCallFailed` (when agy reports an `error`). A hook that handles only one of them writes nothing for the other. `ToolCallCompleted.tool_response` is `None`, because agy gives hooks no tool output; a failed call's text is in `ToolCallFailed.error`.
+- agy sends no permission mode, turn ID or last assistant message.
+- agy's `Stop` maps to `TurnStopped` only when the model finished the run (`terminationReason` `NO_TOOL_CALL` or `TERMINAL_STEP_TYPE`), as Claude Code and Codex stop for their Stop hook; after a cancel, an error, a limit or a hook that ended the run (such as a refused prompt), `main()` runs no handler and writes nothing. An unknown `terminationReason` fails like any other unsupported payload.
+- agy leaves `continuationActive` false after a Stop hook continued the turn, so `TurnStopped.stop_hook_active` also reads `executionNum`, the number of continuations in the turn.
+- agy shows no informational hook message to the user: its terminal does not show a system message whose `metadata.user_markdown` is set, and the model then does not get the step either. (The reason of a `Block` on `PromptSubmitted` is shown, as an error.) So for agy the package carries the main intent of `AddContext`, `Block`, `AllowTool` and `DenyTool` and leaves out their `system_message`. After `app.handle()`, `app.notes` names each field that the call left out. `main()` does not report them: nothing reads a hook's stderr reliably, and a write there could delay the exit that the host waits for.
+
+Results that agy can carry:
+
+| Result | agy events | Notes |
+| --- | --- | --- |
+| `None` | every agy event | Writes nothing. |
+| `AddContext` | `SessionStarted`, `PromptSubmitted` | A system message step that the model reads. |
+| `Block` | `PromptSubmitted` | Ends the turn before the model call and shows the reason, which must not be empty, to the user as an error; `agy -p` then exits 3. agy has already added the prompt to the conversation. |
+| `Block` | `TurnStopped` | Continues the turn; agy gives the reason, which must not be empty, to the model as a system message. |
+| `AllowTool` | `ToolCallProposed` | agy's `allow` decision, with `updated_input` as `overwrite`. agy merges it into the arguments that it sent, so it must keep every argument. Whether agy still asks for permission depends on its permission settings. |
+| `DenyTool` | `ToolCallProposed` | |
+
+Every other result raises `SharedOutputError` for agy: `SystemMessage` (agy shows no informational hook message to the user), `Stop` on `PromptSubmitted` (agy ends a turn early only as an error; use `Block` to refuse the prompt), `Stop` on `TurnStopped` (agy shows no reason for a stop; return `None` to let the turn stop), and context on a tool event or a tool decision.
+
 ## Host wire schemas
 
-`typed_agent_hooks.codex` and `typed_agent_hooks.claude_code` hold the native schemas of each host, for the events in the table above. An input model declares only the fields that the shared events read. It ignores other fields, so a host change to a field that no hook reads cannot break a hook. Declared fields stay strictly typed. An output model holds only the fields that the shared results write, and it is closed and exact. A Claude Code event with no shared equivalent, such as `Notification`, is not modeled: `parse_input` raises `ValueError`, and `main()` fails open.
+`typed_agent_hooks.codex`, `typed_agent_hooks.claude_code` and `typed_agent_hooks.agy` hold the native schemas of each host, for the events in the table above. agy writes camelCase keys; its models read them by alias and use snake_case names. An input model declares only the fields that the shared events read. It ignores other fields, so a host change to a field that no hook reads cannot break a hook. Declared fields stay strictly typed. A JSON field (`core.Json`: tool input, tool output and rewrites) accepts only finite numbers, also through `model_validate_json` and in a mapping or a nested agy tool call from an in-process caller: NaN, infinity and a number that overflows a float, such as `1e400`, raise a `ValidationError`. `parse_input` refuses JSON text that holds `NaN` or `Infinity`, which are not JSON, with a `ValueError`. An output model holds only the fields that the shared results write, and it is closed and exact. A Claude Code event with no shared equivalent, such as `Notification`, is not modeled: `parse_input` raises `ValueError`, and `main()` fails open.
 
 ## Development
 

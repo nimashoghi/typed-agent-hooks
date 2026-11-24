@@ -1,10 +1,11 @@
 """Shared primitives for strict hook schemas and rendering."""
 
 import json
+import math
 from collections.abc import Mapping
-from typing import Literal, TypeAlias, cast
+from typing import Annotated, Literal, TypeAlias, cast
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 from pydantic.types import JsonValue
 
 
@@ -39,16 +40,34 @@ class InputModel(BaseModel):
     )
 
 
-Host: TypeAlias = Literal["codex", "claude"]
-"""A hook host, named as the first argument of a hook command."""
-HOSTS: tuple[Host, ...] = ("codex", "claude")
+Host: TypeAlias = Literal["codex", "claude", "agy"]
+"""A hook host, named as the first argument of a hook command. ``agy`` is the Antigravity CLI."""
+HOSTS: tuple[Host, ...] = ("codex", "claude", "agy")
 
-Json: TypeAlias = JsonValue
+
+def _finite(value: JsonValue) -> JsonValue:
+    # Iterative: JsonValue has already built the containers, and nesting can be deep.
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, float) and not math.isfinite(item):
+            raise ValueError(f"{item} is not a finite number")
+        if isinstance(item, dict):
+            pending.extend(item.values())
+        elif isinstance(item, list):
+            pending.extend(item)
+    return value
+
+
+Json: TypeAlias = Annotated[JsonValue, AfterValidator(_finite)]
+"""A JSON value whose numbers are finite, as JSON's are; in Python and JSON mode
+alike, pydantic's JsonValue alone accepts NaN and infinity."""
 JsonInput: TypeAlias = str | bytes | Mapping[str, object]
 
 
 class CommonOutput(StrictModel):
-    """The output field of every event that a shared result can answer."""
+    """The output field of every Codex and Claude Code event that a shared
+    result can answer."""
 
     system_message: str | None = Field(default=None, serialization_alias="systemMessage")
 
@@ -56,7 +75,7 @@ class CommonOutput(StrictModel):
 class BlockableOutput(CommonOutput):
     """Output of an event that a shared ``Block`` or ``Stop`` can answer.
 
-    Both hosts read the same four fields on these events.
+    Codex and Claude Code read the same four fields on these events.
     """
 
     continue_: bool | None = Field(default=None, serialization_alias="continue")
@@ -71,6 +90,22 @@ class BlockableOutput(CommonOutput):
         return self
 
 
+def _reject_constant(name: str) -> object:
+    raise ValueError(f"{name} is not JSON")
+
+
+def loads_json(text: str | bytes) -> object:
+    """Decode JSON text, refusing NaN and Infinity, which Python's decoder
+    accepts but which are not JSON.
+
+    Raises:
+        ValueError: If the text is malformed (json.JSONDecodeError) or holds
+            NaN or Infinity.
+    """
+
+    return json.loads(text, parse_constant=_reject_constant)
+
+
 def parse_json_object(data: JsonInput) -> dict[str, object]:
     """Parse hook input and require a JSON object.
 
@@ -82,10 +117,11 @@ def parse_json_object(data: JsonInput) -> dict[str, object]:
 
     Raises:
         TypeError: If the decoded value is not a JSON object.
-        json.JSONDecodeError: If JSON text is malformed.
+        ValueError: If JSON text is malformed (json.JSONDecodeError) or holds
+            NaN or Infinity, which are not JSON.
     """
 
-    decoded: object = json.loads(data) if isinstance(data, (str, bytes)) else dict(data)
+    decoded: object = loads_json(data) if isinstance(data, (str, bytes)) else dict(data)
     if not isinstance(decoded, dict):
         raise TypeError("hook payload must be a JSON object")
     return cast(dict[str, object], decoded)
@@ -94,8 +130,13 @@ def parse_json_object(data: JsonInput) -> dict[str, object]:
 def render_json(model: BaseModel) -> str:
     """Render a Pydantic model as compact host wire JSON."""
 
-    return json.dumps(
+    # NaN and Infinity are not JSON; json.dumps would write them anyway.
+    rendered = json.dumps(
         model.model_dump(by_alias=True, exclude_none=True),
         ensure_ascii=False,
         separators=(",", ":"),
+        allow_nan=False,
     )
+    # The hosts read UTF-8; a lone surrogate (from a file name, say) has none.
+    rendered.encode()
+    return rendered

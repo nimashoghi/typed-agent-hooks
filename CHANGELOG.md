@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.0
+
+Added:
+
+- The Google Antigravity CLI as a third host, `agy`. `app.main()` accepts `agy` as the host argument, and `typed_agent_hooks.agy` holds the wire schemas of its `SessionStart`, `PreInvocation`, `PreToolUse`, `PostToolUse` and `Stop` events. `PreInvocation` maps to `PromptSubmitted` only before a model call that answers a user prompt. The README section [agy](README.md#agy) lists the events and results that agy supports.
+
+Changed:
+
+- `core.Host`, `core.HOSTS` and `EventContext.host` include `"agy"`. Code that handles every host must handle it.
+- In agy, `app.handle` returns `None` without running a handler for a `Stop` after a run that the model did not finish, for a `PreInvocation` that does not answer a user prompt, and for a `PostToolUse` of the kind (completed or failed call) that a hook does not handle when it handles the other kind. A hook that handles neither still fails with "no handler".
+- In agy, a handler gets a copy of the event, so that a tool rewrite is checked against the arguments that agy sent.
+- In agy, the `system_message` of `AddContext`, `Block`, `AllowTool` and `DenyTool` is left out, because agy shows no informational hook message to the user. `app.notes` names each field that the last `handle()` left out; `main()` does not report them.
+
+Fixed:
+
+- `core.Json` (tool input and output, and rewrites) accepts only finite numbers, in every host and in Python and JSON mode alike (pydantic's `JsonValue` alone accepts NaN and infinity). So no handler gets such a number, and a result that holds one fails when it is built. `parse_input` refuses JSON text that holds `NaN` or `Infinity`, which are not JSON (`core.loads_json`); a number that overflows a float in a field that no model reads is still ignored. agy's `ToolCall` is validated again when a caller passes an instance.
+- `core.render_json` refuses NaN and infinite numbers, which are not JSON, and text that is not valid UTF-8 (a lone surrogate), in every host. Before, such a result rendered invalid JSON, or `main()` failed to write it.
+
 ## 0.3.0
 
 This release is breaking. The package keeps only the shared typed event layer and the Codex and Claude Code wire schemas. The host files now hold all host configuration.

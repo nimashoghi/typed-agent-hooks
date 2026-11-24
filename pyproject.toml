@@ -4,15 +4,15 @@ build-backend = "uv_build"
 
 [project]
 name = "typed-agent-hooks"
-version = "0.3.0"
-description = "Typed hook events and strict wire schemas for Codex and Claude Code."
+version = "0.4.0"
+description = "Typed hook events and strict wire schemas for Codex, Claude Code and the Antigravity CLI."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Nima Shoghi", email = "nimashoghi@gmail.com" }]
 dependencies = ["pydantic>=2.8,<3"]
-keywords = ["codex", "claude-code", "hooks", "pydantic", "schemas"]
+keywords = ["codex", "claude-code", "antigravity", "agy", "hooks", "pydantic", "schemas"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Programming Language :: Python :: 3",
