@@ -178,7 +178,7 @@ Results that agy can carry:
 | `None` | every agy event | Writes nothing. |
 | `AddContext` | `SessionStarted`, `PromptSubmitted` | A system message step that the model reads. |
 | `Block` | `PromptSubmitted` | Ends the turn before the model call and shows the reason, which must not be empty, to the user as an error; `agy -p` then exits 3. agy has already added the prompt to the conversation. |
-| `Block` | `TurnStopped` | Continues the turn; agy gives the reason to the model as a system message. |
+| `Block` | `TurnStopped` | Continues the turn; agy gives the reason, which must not be empty, to the model as a system message. |
 | `AllowTool` | `ToolCallProposed` | agy's `allow` decision, with `updated_input` as `overwrite`. agy merges it into the arguments that it sent, so it must keep every argument. Whether agy still asks for permission depends on its permission settings. |
 | `DenyTool` | `ToolCallProposed` | |
 

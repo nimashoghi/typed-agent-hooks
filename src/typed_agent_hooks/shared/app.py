@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import warnings
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, TypeVar, cast
@@ -16,7 +17,7 @@ from .agy_outputs import to_agy_output
 from .claude_code_outputs import to_claude_code_output
 from .codex_outputs import to_codex_output
 from .events import EVENT_TYPES, AnyEvent, BaseEvent, ToolCallCompleted, ToolCallFailed
-from .outputs import Result
+from .outputs import Result, SharedOutputWarning
 
 EventT = TypeVar("EventT", bound=BaseEvent)
 Handler = Callable[[EventT], Result]
@@ -114,13 +115,20 @@ class HookApp:
             # it, and point descriptor 1 at stderr until the process exits. Do
             # not flush first: text that is still in the stdout buffer, such as
             # a print at import, then goes to stderr.
-            host_stdout = os.fdopen(os.dup(1), "wb")
-            os.dup2(2, 1)
-            output = self.handle(host, sys.stdin.buffer.read())
-            if output is not None:
-                # The hosts read hook stdout as UTF-8, whatever the locale.
-                host_stdout.write(output.encode() + b"\n")
-                host_stdout.flush()
+            with os.fdopen(os.dup(1), "wb") as host_stdout:
+                os.dup2(2, 1)
+                # A field that the host leaves out is reported, and never stops
+                # the output, also when Python turns warnings into errors.
+                with warnings.catch_warnings(record=True) as omitted:
+                    warnings.simplefilter("always", SharedOutputWarning)
+                    output = self.handle(host, sys.stdin.buffer.read())
+                for warning in omitted:
+                    message = f"{warning.category.__name__}: {warning.message}"
+                    print(f"{self.name}: {message}", file=sys.stderr)
+                if output is not None:
+                    # The hosts read hook stdout as UTF-8, whatever the locale.
+                    host_stdout.write(output.encode() + b"\n")
+                    host_stdout.flush()
         # A handler's exit code must not reach the host: exit 2 blocks the action.
         except (Exception, SystemExit) as error:
             detail = " ".join(str(error).split())

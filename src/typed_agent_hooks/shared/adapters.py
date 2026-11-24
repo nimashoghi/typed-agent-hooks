@@ -261,6 +261,8 @@ def _answers_user_input(transcript: Path, steps: int) -> bool:
     result.
     """
 
+    if steps == 0:
+        return False  # an empty prefix holds no prompt
     count, last = 0, None
     with transcript.open(encoding="utf-8") as lines:
         for line in islice(lines, steps):

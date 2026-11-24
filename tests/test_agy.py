@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import warnings
 from pathlib import Path
 from typing import Any, cast
 
@@ -162,6 +163,7 @@ def test_a_transcript_step_without_a_type_raises(tmp_path: Path) -> None:
 def test_later_model_calls_of_a_run_are_not_prompts_and_read_no_transcript() -> None:
     # The fixture's transcript does not exist.
     assert _event("PreInvocation", invocationNum=3) is None
+    assert _event("PreInvocation", initialNumSteps=0) is None
 
 
 def test_failed_tool_call_and_stop_continuation() -> None:
@@ -410,3 +412,54 @@ def test_main_runs_a_hook_for_agy(
     )
 
     assert (result.returncode, result.stdout, result.stderr) == (0, stdout, "")
+
+
+def test_a_failed_rewrite_warns_about_nothing() -> None:
+    event = _event("PreToolUse")
+    assert event is not None
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with pytest.raises(SharedOutputError, match="cannot remove tool arguments"):
+            to_agy_output(event, shared.outputs.AllowTool(updated_input={}, system_message="x"))
+
+    assert not caught
+
+
+DENY_HOOK = """\
+from typed_agent_hooks import shared
+
+app = shared.HookApp(name="deny")
+
+
+@app.on(shared.events.ToolCallProposed)
+def proposed(event):
+    return shared.outputs.DenyTool(reason="Not here.", system_message="Ask first.")
+
+
+if __name__ == "__main__":
+    app.main()
+"""
+
+
+def test_an_omitted_message_never_stops_the_decision(tmp_path: Path) -> None:
+    hook = tmp_path / "deny.py"
+    hook.write_text(DENY_HOOK, encoding="utf-8")
+    env = {key: value for key, value in os.environ.items() if key != "PYTHONUNBUFFERED"}
+
+    # Also when Python turns every warning into an error.
+    result = subprocess.run(
+        [sys.executable, "-W", "error", str(hook), "agy"],
+        input=json.dumps(_payload("PreToolUse")),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=env,
+    )
+
+    assert result.returncode == 0
+    assert json.loads(result.stdout) == {"decision": "deny", "reason": "Not here."}
+    assert result.stderr == (
+        "deny: SharedOutputWarning: agy shows no hook message to the user: "
+        "left out the system_message of DenyTool on ToolCallProposed\n"
+    )

@@ -43,12 +43,13 @@ def _unsupported(event: AnyEvent, output: object, why: str) -> SharedOutputError
 
 
 def _omit_message(event: AnyEvent, output: AddContext | Block | AllowTool | DenyTool) -> None:
+    """Warn that agy leaves out the system_message; call it once the output is built."""
     if output.system_message is not None:
         warnings.warn(
             f"agy shows no hook message to the user: left out the system_message of "
             f"{type(output).__name__} on {event.event_name}",
             SharedOutputWarning,
-            stacklevel=3,
+            stacklevel=2,
         )
 
 
@@ -58,11 +59,13 @@ def _context(event: AnyEvent, output: AddContext) -> agy.outputs.StructuredOutpu
     )
     match event.event_name:
         case "SessionStarted":
+            started = agy.outputs.SessionStartOutput(inject_steps=[step])
             _omit_message(event, output)
-            return agy.outputs.SessionStartOutput(inject_steps=[step])
+            return started
         case "PromptSubmitted":
+            invoked = agy.outputs.PreInvocationOutput(inject_steps=[step])
             _omit_message(event, output)
-            return agy.outputs.PreInvocationOutput(inject_steps=[step])
+            return invoked
     raise _unsupported(event, output, "agy adds context only at session start and before a prompt")
 
 
@@ -70,9 +73,10 @@ def _tool_decision(event: AnyEvent, output: AllowTool | DenyTool) -> agy.outputs
     require_event(event, TOOL_DECISION_EVENTS, output)
     if output.context is not None:
         raise _unsupported(event, output, "agy PreToolUse cannot add context")
-    _omit_message(event, output)
     if isinstance(output, DenyTool):
-        return agy.outputs.PreToolUseOutput(decision="deny", reason=output.reason)
+        denied = agy.outputs.PreToolUseOutput(decision="deny", reason=output.reason)
+        _omit_message(event, output)
+        return denied
     overwrite = output.updated_input
     if overwrite is not None:
         assert event.event_name == "ToolCallProposed"
@@ -86,7 +90,11 @@ def _tool_decision(event: AnyEvent, output: AllowTool | DenyTool) -> agy.outputs
             raise _unsupported(
                 event, output, f"agy cannot remove tool arguments {', '.join(missing)}"
             )
-    return agy.outputs.PreToolUseOutput(decision="allow", reason=output.reason, overwrite=overwrite)
+    allowed = agy.outputs.PreToolUseOutput(
+        decision="allow", reason=output.reason, overwrite=overwrite
+    )
+    _omit_message(event, output)
+    return allowed
 
 
 def to_agy_output(event: AnyEvent, output: Result) -> agy.outputs.HookResult:
@@ -106,17 +114,19 @@ def to_agy_output(event: AnyEvent, output: Result) -> agy.outputs.HookResult:
             if not output.reason:
                 raise SharedOutputError("Block needs a reason")
             if event.event_name == "PromptSubmitted":
-                _omit_message(event, output)
                 # agy has already added the prompt to the conversation. Ending
                 # the run before the model call shows the reason as an error.
                 error = agy.outputs.ErrorMessageStep(user_message=output.reason)
-                return agy.outputs.PreInvocationOutput(
+                refused = agy.outputs.PreInvocationOutput(
                     inject_steps=[agy.outputs.ErrorMessageItem(error_message=error)],
                     termination_behavior="terminate",
                 )
-            if event.event_name == "TurnStopped":
                 _omit_message(event, output)
-                return agy.outputs.StopOutput(decision="continue", reason=output.reason)
+                return refused
+            if event.event_name == "TurnStopped":
+                continued = agy.outputs.StopOutput(decision="continue", reason=output.reason)
+                _omit_message(event, output)
+                return continued
             raise AssertionError(f"unhandled block event {event.event_name}")
         case Stop():
             require_event(event, STOP_EVENTS, output)
