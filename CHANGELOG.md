@@ -15,7 +15,7 @@ Changed:
 
 Fixed:
 
-- Input models refuse a number that is not finite in a field that they read, in every host and also in a mapping or a model instance from an in-process caller, so that no handler gets one; JSON text that holds `NaN` or `Infinity`, which are not JSON, raises `ValueError` (`core.loads_json`). A number that overflows a float in a field that no model reads is still ignored.
+- `core.Json` (tool input and output, and rewrites) accepts only finite numbers, in every host and in Python and JSON mode alike (pydantic's `JsonValue` alone accepts NaN and infinity). So no handler gets such a number, and a result that holds one fails when it is built. `parse_input` refuses JSON text that holds `NaN` or `Infinity`, which are not JSON (`core.loads_json`); a number that overflows a float in a field that no model reads is still ignored. agy's `ToolCall` is validated again when a caller passes an instance.
 - `core.render_json` refuses NaN and infinite numbers, which are not JSON, and text that is not valid UTF-8 (a lone surrogate), in every host. Before, such a result rendered invalid JSON, or `main()` failed to write it.
 
 ## 0.3.0

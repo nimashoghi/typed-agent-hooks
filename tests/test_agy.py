@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from typed_agent_hooks import agy, claude_code, codex, shared
 from typed_agent_hooks.core import parse_json_object, render_json
@@ -366,7 +366,7 @@ def test_a_rewrite_with_a_number_that_json_lacks_is_refused() -> None:
             updated_input={**event.tool_input, "WaitMsBeforeAsync": float("nan")}
         )
 
-    with pytest.raises(ValueError, match="JSON compliant"):
+    with pytest.raises(ValidationError, match="nan is not a finite number"):
         app.handle("agy", _payload("PreToolUse"))
 
 
@@ -437,7 +437,8 @@ def test_main_runs_a_hook_for_agy(
     assert (result.returncode, result.stdout, result.stderr) == (0, stdout, "")
 
 
-NAN_HOOK = """\
+# A lone surrogate is a valid str but not UTF-8, so the output fails to render.
+UNRENDERABLE_HOOK = """\
 from typed_agent_hooks import shared
 
 app = shared.HookApp(name="rewrite")
@@ -445,7 +446,7 @@ app = shared.HookApp(name="rewrite")
 
 @app.on(shared.events.ToolCallProposed)
 def proposed(event):
-    rewrite = {**event.tool_input, "WaitMsBeforeAsync": [float("nan")]}
+    rewrite = {**event.tool_input, "WaitMsBeforeAsync": ["\\ud800"]}
     return shared.outputs.AllowTool(updated_input=rewrite, system_message="x")
 
 
@@ -456,7 +457,7 @@ if __name__ == "__main__":
 
 def test_an_output_that_does_not_render_gets_no_note(tmp_path: Path) -> None:
     hook = tmp_path / "rewrite.py"
-    hook.write_text(NAN_HOOK, encoding="utf-8")
+    hook.write_text(UNRENDERABLE_HOOK, encoding="utf-8")
     env = {key: value for key, value in os.environ.items() if key != "PYTHONUNBUFFERED"}
 
     result = subprocess.run(
@@ -470,12 +471,12 @@ def test_an_output_that_does_not_render_gets_no_note(tmp_path: Path) -> None:
 
     assert (result.returncode, result.stdout) == (0, "")
     (line,) = result.stderr.splitlines()
-    assert line.startswith("rewrite: ValueError: Out of range float values are not JSON compliant")
+    assert line.startswith("rewrite: UnicodeEncodeError: ")
 
 
 def test_in_process_callers_read_the_notes_of_the_last_call() -> None:
     app = shared.HookApp(name="deny")
-    calls = iter(["Not here.", float("nan")])
+    calls = iter(["Not here.", "\ud800"])
 
     @app.on(shared.events.ToolCallProposed)
     def proposed(event: shared.events.ToolCallProposed) -> shared.outputs.Result:
@@ -491,7 +492,7 @@ def test_in_process_callers_read_the_notes_of_the_last_call() -> None:
         "agy shows no informational hook message to the user"
     ]
     # A call that fails leaves no notes, also none of the call before it.
-    with pytest.raises(ValueError, match="JSON compliant"):
+    with pytest.raises(UnicodeEncodeError):
         app.handle("agy", _payload("PreToolUse"))
     assert app.notes == []
 
@@ -752,3 +753,48 @@ def test_other_hosts_keep_strict_nested_fields_and_refuse_infinity(
     for value in (("a", "b"), UserDict({"a": 1}), float("inf")):
         with pytest.raises(ValidationError):
             parser({**payload, "tool_input": {"args": value}})
+
+
+@pytest.mark.parametrize(
+    ("model", "payload"),
+    [
+        (
+            agy.events.PreToolUseInput,
+            _payload(
+                "PreToolUse",
+                toolCall={"id": "c", "name": "run_command", "args": {"x": {"y": ["N"]}}},
+            ),
+        ),
+        *[
+            (
+                host.events.PreToolUseInput,
+                next(
+                    item
+                    for item in json.loads((FIXTURES / fixture).read_text(encoding="utf-8"))
+                    if item["hook_event_name"] == "PreToolUse"
+                )
+                | {"tool_input": {"x": {"y": ["N"]}}},
+            )
+            for host, fixture in (
+                (codex, "codex_inputs.json"),
+                (claude_code, "claude_code_inputs.json"),
+            )
+        ],
+    ],
+)
+def test_wire_models_refuse_numbers_that_are_not_finite_in_json_mode(
+    model: Any, payload: dict[str, object]
+) -> None:
+    for number in ("NaN", "Infinity", "-Infinity", "1e400"):
+        text = json.dumps(payload).replace('"N"', number)
+        with pytest.raises(ValidationError, match="finite number"):
+            model.model_validate_json(text)
+        with pytest.raises(ValidationError, match="finite number"):
+            TypeAdapter(model).validate_json(text)
+
+
+def test_a_parsed_agy_event_validates_again_as_an_instance() -> None:
+    payloads = json.loads((FIXTURES / "agy_inputs.json").read_text(encoding="utf-8"))
+    for payload in payloads:
+        event = agy.parse_input(payload)
+        assert type(event).model_validate(event) == event

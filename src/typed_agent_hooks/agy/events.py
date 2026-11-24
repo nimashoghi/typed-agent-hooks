@@ -6,7 +6,7 @@ under a snake_case name. agy sends no permission mode, turn ID or tool output.
 
 from typing import Literal, TypeAlias, cast
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from typed_agent_hooks.core import InputModel, Json, JsonInput, parse_json_object
 
@@ -44,6 +44,10 @@ class PreInvocationInput(BaseInput):
 
 
 class ToolCall(InputModel):
+    # Validated again when an in-process caller passes an instance, so that its
+    # arguments are checked; ToolCall has no aliases, so its field names are its keys.
+    model_config = ConfigDict(revalidate_instances="always")
+
     id: str
     name: str
     args: dict[str, Json]

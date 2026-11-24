@@ -1,10 +1,11 @@
 """Shared primitives for strict hook schemas and rendering."""
 
 import json
+import math
 from collections.abc import Mapping
-from typing import Literal, TypeAlias, cast
+from typing import Annotated, Literal, TypeAlias, cast
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 from pydantic.types import JsonValue
 
 
@@ -34,10 +35,6 @@ class InputModel(BaseModel):
         extra="ignore",
         strict=True,
         frozen=True,
-        # A number that a model reads must be finite (JSON has no other), also
-        # in a model instance that an in-process caller passes inside a mapping.
-        allow_inf_nan=False,
-        revalidate_instances="always",
         # A hook run builds only the schemas that it uses, not all at import.
         defer_build=True,
     )
@@ -47,12 +44,30 @@ Host: TypeAlias = Literal["codex", "claude", "agy"]
 """A hook host, named as the first argument of a hook command. ``agy`` is the Antigravity CLI."""
 HOSTS: tuple[Host, ...] = ("codex", "claude", "agy")
 
-Json: TypeAlias = JsonValue
+
+def _finite(value: JsonValue) -> JsonValue:
+    # Iterative: JsonValue has already built the containers, and nesting can be deep.
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, float) and not math.isfinite(item):
+            raise ValueError(f"{item} is not a finite number")
+        if isinstance(item, dict):
+            pending.extend(item.values())
+        elif isinstance(item, list):
+            pending.extend(item)
+    return value
+
+
+Json: TypeAlias = Annotated[JsonValue, AfterValidator(_finite)]
+"""A JSON value whose numbers are finite, as JSON's are; in Python and JSON mode
+alike, pydantic's JsonValue alone accepts NaN and infinity."""
 JsonInput: TypeAlias = str | bytes | Mapping[str, object]
 
 
 class CommonOutput(StrictModel):
-    """The output field of every event that a shared result can answer."""
+    """The output field of every Codex and Claude Code event that a shared
+    result can answer."""
 
     system_message: str | None = Field(default=None, serialization_alias="systemMessage")
 
@@ -60,7 +75,7 @@ class CommonOutput(StrictModel):
 class BlockableOutput(CommonOutput):
     """Output of an event that a shared ``Block`` or ``Stop`` can answer.
 
-    Both hosts read the same four fields on these events.
+    Codex and Claude Code read the same four fields on these events.
     """
 
     continue_: bool | None = Field(default=None, serialization_alias="continue")
