@@ -59,8 +59,8 @@ class HookApp:
 
         Afterwards, ``notes`` lists the fields of the result that the host
         left out. Returns ``None`` when the handler returns ``None``. In agy, it also
-        returns ``None`` without a handler for a PreInvocation that does not
-        answer a user prompt, and for a PostToolUse that a hook does not handle
+        returns ``None`` without a handler for a Stop after a run that the model
+        did not finish, for a PreInvocation that does not answer a user prompt, and for a PostToolUse that a hook does not handle
         but whose other kind (completed or failed call) it handles. Raises on
         every other failure, including an event that has no handler.
         """

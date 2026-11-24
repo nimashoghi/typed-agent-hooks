@@ -575,3 +575,9 @@ def test_an_allowed_call_notes_its_omitted_message() -> None:
         "agy left out the system_message of AllowTool on ToolCallProposed: "
         "agy shows no informational hook message to the user"
     ]
+
+
+@pytest.mark.parametrize("reason", ["", "model_stop"])
+def test_an_unknown_stop_reason_raises(reason: str) -> None:
+    with pytest.raises(ValueError, match="unknown agy terminationReason"):
+        _event("Stop", terminationReason=reason)

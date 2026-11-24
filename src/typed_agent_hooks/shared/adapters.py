@@ -278,8 +278,20 @@ def _answers_user_input(transcript: Path, steps: int) -> bool:
     return last == "USER_INPUT"
 
 
-# agy's terminationReason values for a run that the model finished.
+# agy's terminationReason values for a run that the model finished, and the
+# documented ones for a run that it did not (agy's hooks documentation).
 AGY_FINISHED = frozenset({"NO_TOOL_CALL", "TERMINAL_STEP_TYPE"})
+AGY_UNFINISHED = frozenset(
+    {
+        "MAX_INVOCATIONS",
+        "MAX_FORCED_INVOCATIONS",
+        "MAX_TOKEN_BUDGET_EXCEEDED",
+        "ERROR",
+        "USER_CANCELED",
+        "TERMINAL_CUSTOM_HOOK",
+        "INJECTED_RESPONSE",
+    }
+)
 
 
 def from_agy(event: agy.events.AnyInput) -> AnyEvent | None:
@@ -338,8 +350,10 @@ def from_agy(event: agy.events.AnyInput) -> AnyEvent | None:
             # Claude Code and Codex stop a turn for their Stop hook only when the
             # model finished; a Stop hook must not continue a turn that the user
             # cancelled, that failed, or that a hook ended (a refused prompt).
-            if event.termination_reason not in AGY_FINISHED:
+            if event.termination_reason in AGY_UNFINISHED:
                 return None
+            if event.termination_reason not in AGY_FINISHED:
+                raise ValueError(f"unknown agy terminationReason {event.termination_reason!r}")
             return TurnStopped(
                 context=context,
                 stop_hook_active=event.continuation_active or event.execution_num > 0,
