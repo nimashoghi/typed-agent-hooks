@@ -40,7 +40,7 @@ class PreInvocationInput(BaseInput):
     initial_num_steps: int = Field(alias="initialNumSteps", ge=0)
     # The text of the most recent user prompt. A run that a background message
     # or a Stop hook started repeats the prompt before it.
-    last_user_input: str | None = Field(default=None, alias="lastUserInput")
+    last_user_input: str = Field(alias="lastUserInput")
 
 
 class ToolCall(InputModel):
@@ -67,7 +67,7 @@ class StopInput(BaseInput):
     # How many times a Stop hook has kept this turn going. agy 1.5.16 leaves
     # continuationActive false after a Stop hook continued the turn.
     execution_num: int = Field(alias="executionNum", ge=0)
-    continuation_active: bool = Field(default=False, alias="continuationActive")
+    continuation_active: bool = Field(alias="continuationActive")
     # Why the run ended: shared.adapters.AGY_FINISHED when the model finished,
     # AGY_UNFINISHED for a cancel, an error, a limit or a hook that ended it.
     termination_reason: str = Field(alias="terminationReason")

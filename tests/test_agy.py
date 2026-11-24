@@ -98,6 +98,10 @@ def test_inputs_ignore_unknown_fields_and_reject_declared_type_drift() -> None:
         # Every agy hook names the model.
         ("SessionStart", {"modelName": None}),
         ("SessionStart", {"modelName": 7}),
+        # The prompt text and the continuation flag that agy always sends.
+        ("PreInvocation", {"lastUserInput": None}),
+        ("PreInvocation", {"lastUserInput": ["x"]}),
+        ("Stop", {"continuationActive": None}),
     ],
 )
 def test_inputs_reject_missing_counters_and_non_object_arguments(

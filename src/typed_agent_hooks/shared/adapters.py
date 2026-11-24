@@ -320,8 +320,6 @@ def from_agy(event: agy.events.AnyInput) -> AnyEvent | None:
                 Path(event.transcript_path), event.initial_num_steps
             ):
                 return None
-            if event.last_user_input is None:
-                raise ValueError("agy PreInvocation after a user prompt has no lastUserInput")
             return PromptSubmitted(context=context, prompt=event.last_user_input)
         case agy.events.PreToolUseInput():
             return ToolCallProposed(
