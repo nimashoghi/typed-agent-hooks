@@ -189,7 +189,7 @@ def test_results_are_refused_where_the_hosts_differ(event_name: str, result: obj
         to_claude_code_output(claude_event, cast(Any, result))
 
 
-def test_allow_tool_without_updated_input_is_claude_code_only() -> None:
+def test_allow_tool_without_updated_input_is_refused_only_by_codex() -> None:
     codex_event = from_codex(codex.parse_input(_payload("codex_inputs.json", "PreToolUse")))
     claude_event = from_claude_code(
         claude_code.parse_input(_payload("claude_code_inputs.json", "PreToolUse"))

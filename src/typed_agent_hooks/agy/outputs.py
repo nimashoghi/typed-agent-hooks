@@ -2,7 +2,7 @@
 
 from typing import Literal, TypeAlias
 
-from pydantic import Field, model_validator
+from pydantic import Field
 
 from typed_agent_hooks.core import Json, StrictModel
 
@@ -19,30 +19,25 @@ class ErrorMessageStep(StrictModel):
     """An error that agy shows to the user and does not send to the model.
     ``agy -p`` exits 3 after a turn that ends with one."""
 
-    user_message: str = Field(serialization_alias="userMessage")
+    user_message: str = Field(serialization_alias="userMessage", min_length=1)
 
 
-class InjectStep(StrictModel):
-    """One step that agy adds to the conversation."""
+class SystemMessageItem(StrictModel):
+    system_message: SystemMessageStep = Field(serialization_alias="systemMessage")
 
-    system_message: SystemMessageStep | None = Field(
-        default=None, serialization_alias="systemMessage"
-    )
-    error_message: ErrorMessageStep | None = Field(default=None, serialization_alias="errorMessage")
 
-    @model_validator(mode="after")
-    def _one_kind(self) -> "InjectStep":
-        if (self.system_message is None) == (self.error_message is None):
-            raise ValueError("an inject step holds exactly one of systemMessage and errorMessage")
-        return self
+class ErrorMessageItem(StrictModel):
+    error_message: ErrorMessageStep = Field(serialization_alias="errorMessage")
 
 
 class SessionStartOutput(StrictModel):
-    inject_steps: list[InjectStep] = Field(serialization_alias="injectSteps")
+    inject_steps: list[SystemMessageItem] = Field(serialization_alias="injectSteps")
 
 
 class PreInvocationOutput(StrictModel):
-    inject_steps: list[InjectStep] = Field(serialization_alias="injectSteps")
+    inject_steps: list[SystemMessageItem | ErrorMessageItem] = Field(
+        serialization_alias="injectSteps"
+    )
     # "terminate" ends the turn before the model call.
     termination_behavior: Literal["terminate"] | None = Field(
         default=None, serialization_alias="terminationBehavior"
@@ -59,7 +54,7 @@ class PreToolUseOutput(StrictModel):
 class StopOutput(StrictModel):
     # "continue" keeps the turn going; agy injects the reason as a system message.
     decision: Literal["continue"]
-    reason: str
+    reason: str = Field(min_length=1)
 
 
 StructuredOutput: TypeAlias = (

@@ -261,19 +261,18 @@ def _answers_user_input(transcript: Path, steps: int) -> bool:
     result.
     """
 
+    count, last = 0, None
     with transcript.open(encoding="utf-8") as lines:
-        prefix = list(islice(lines, steps))
-    if len(prefix) < steps:
-        raise ValueError(
-            f"{transcript} has {len(prefix)} steps, fewer than initialNumSteps {steps}"
-        )
-    for line in reversed(prefix):
-        kind = json.loads(line).get("type")
-        if not isinstance(kind, str):
-            raise ValueError(f"{transcript} has a step without a type")
-        if kind != "SYSTEM_MESSAGE":
-            return kind == "USER_INPUT"
-    return False
+        for line in islice(lines, steps):
+            count += 1
+            kind = json.loads(line).get("type")
+            if not isinstance(kind, str):
+                raise ValueError(f"{transcript} has a step without a type")
+            if kind != "SYSTEM_MESSAGE":
+                last = kind
+    if count < steps:
+        raise ValueError(f"{transcript} has {count} steps, fewer than initialNumSteps {steps}")
+    return last == "USER_INPUT"
 
 
 def from_agy(event: agy.events.AnyInput) -> AnyEvent | None:

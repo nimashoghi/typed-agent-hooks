@@ -14,7 +14,7 @@ from typed_agent_hooks import agy, shared
 from typed_agent_hooks.core import render_json
 from typed_agent_hooks.shared.adapters import from_agy
 from typed_agent_hooks.shared.agy_outputs import to_agy_output
-from typed_agent_hooks.shared.outputs import SharedOutputError
+from typed_agent_hooks.shared.outputs import SharedOutputError, SharedOutputWarning
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -151,6 +151,14 @@ def test_a_transcript_shorter_than_its_steps_raises(tmp_path: Path) -> None:
         _event("PreInvocation", transcriptPath=transcript, initialNumSteps=2)
 
 
+def test_a_transcript_step_without_a_type_raises(tmp_path: Path) -> None:
+    path = tmp_path / "transcript_full.jsonl"
+    path.write_text('{}\n{"type": "USER_INPUT"}\n{"type": "PLANNER_RESPONSE"}\n')
+
+    with pytest.raises(ValueError, match="without a type"):
+        _event("PreInvocation", transcriptPath=str(path), initialNumSteps=2)
+
+
 def test_later_model_calls_of_a_run_are_not_prompts_and_read_no_transcript() -> None:
     # The fixture's transcript does not exist.
     assert _event("PreInvocation", invocationNum=3) is None
@@ -177,9 +185,8 @@ def test_failed_tool_call_and_stop_continuation() -> None:
             {"injectSteps": [{"systemMessage": {"systemMessage": "Read the guide."}}]},
         ),
         (
-            # agy shows no hook message to the user, so system_message is left out.
             "PreInvocation",
-            shared.outputs.AddContext(text="Context.", system_message="Shown."),
+            shared.outputs.AddContext(text="Context."),
             {"injectSteps": [{"systemMessage": {"systemMessage": "Context."}}]},
         ),
         (
@@ -200,6 +207,7 @@ def test_failed_tool_call_and_stop_continuation() -> None:
             shared.outputs.DenyTool(reason="Not allowed."),
             {"decision": "deny", "reason": "Not allowed."},
         ),
+        ("PreToolUse", shared.outputs.AllowTool(), {"decision": "allow"}),
         (
             "PreToolUse",
             shared.outputs.AllowTool(
@@ -244,6 +252,8 @@ def test_results_render_the_agy_wire(
         ("Stop", shared.outputs.Stop(reason="Done.")),
         ("PreToolUse", shared.outputs.DenyTool(reason="No.", context="Context.")),
         ("PreToolUse", shared.outputs.AllowTool(updated_input={"CommandLine": "true"})),
+        ("PreInvocation", shared.outputs.Block(reason="")),
+        ("Stop", shared.outputs.Block(reason="")),
     ],
 )
 def test_results_that_agy_cannot_carry_raise(
@@ -252,8 +262,29 @@ def test_results_that_agy_cannot_carry_raise(
     event = _prompt(tmp_path) if event_name == "PreInvocation" else _event(event_name)
     assert event is not None
 
-    with pytest.raises(SharedOutputError, match="not supported by agy"):
+    with pytest.raises(SharedOutputError, match="not supported by agy|needs a reason"):
         to_agy_output(event, cast(Any, result))
+
+
+@pytest.mark.parametrize(
+    ("event_name", "result"),
+    [
+        ("SessionStart", shared.outputs.AddContext(text="Context.", system_message="Shown.")),
+        ("PreInvocation", shared.outputs.Block(reason="No.", system_message="Shown.")),
+        ("Stop", shared.outputs.Block(reason="Go on.", system_message="Shown.")),
+        ("PreToolUse", shared.outputs.DenyTool(reason="No.", system_message="Shown.")),
+    ],
+)
+def test_a_system_message_that_agy_cannot_show_is_left_out_with_a_warning(
+    tmp_path: Path, event_name: str, result: object
+) -> None:
+    event = _prompt(tmp_path) if event_name == "PreInvocation" else _event(event_name)
+    assert event is not None
+
+    with pytest.warns(SharedOutputWarning, match="left out the system_message"):
+        output = to_agy_output(event, cast(Any, result))
+
+    assert "Shown." not in render_json(cast(Any, output))
 
 
 @pytest.mark.parametrize(
